@@ -6,10 +6,17 @@ import argparse
 import sys
 from pathlib import Path
 
-from .analysis import HIGH_BADGE, analyze, load_benchmarks
+import json
+
+from .analysis import HIGH_BADGE, Finding, analyze, load_benchmarks
+from .metrics import compare_to_baseline
 from .api import Api
 from .match import Match
 from .report import render
+
+
+def _fmt(v: float) -> str:
+    return f"{v:.0%}" if 0 <= v <= 1 and not float(v).is_integer() else f"{v:,.1f}"
 
 
 def main(argv=None) -> int:
@@ -23,6 +30,7 @@ def main(argv=None) -> int:
     ap.add_argument("--min-badge", type=int, default=HIGH_BADGE, help="rank used for benchmarks (default 90 = Phantom+)")
     ap.add_argument("--out", help="output markdown file (default reports/<match>.md)")
     ap.add_argument("--cache", default=".cache")
+    ap.add_argument("--baselines", default="baselines/summary.json", help="top-tier baseline summary (from collect)")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
 
@@ -46,6 +54,19 @@ def main(argv=None) -> int:
         bench = load_benchmarks(m, {m.players[s].hero_id for s in focus}, a.min_badge)
 
     fights, findings, extras = analyze(m, focus, bench)
+    summary_path = Path(a.baselines)
+    if focus and summary_path.exists():
+        summary = json.loads(summary_path.read_text())
+        extras["baseline"] = {s: compare_to_baseline(m, m.players[s], summary, fights, extras.get("fight_damage"))
+                              for s in focus}
+        extras["baseline_min_badge"] = a.min_badge
+        for s, rows in extras["baseline"].items():
+            for r in rows:
+                if r["better_than"] < 0.2 and r["n"] >= 15:
+                    p = m.players[s]
+                    findings.append(Finding(s, p.team, 0, "below_baseline", 1.5,
+                                            f"{r['label']}: {_fmt(r['you'])} - worse than {1 - r['better_than']:.0%} "
+                                            f"of top-tier {p.hero} games (their median {_fmt(r['p50'])})"))
     md = render(m, fights, findings, focus, extras)
     out = Path(a.out or f"reports/{a.match_id}.md")
     out.parent.mkdir(parents=True, exist_ok=True)

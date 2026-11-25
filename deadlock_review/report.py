@@ -109,6 +109,29 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
                 w(f"| {fmt_t(t)} | {cd:.0f}s | {ready} | {', '.join(notes) or 'none'} |")
         w("")
 
+    # ----- comparison with top-tier baselines
+    for slot, brows in (extras.get("baseline") or {}).items():
+        if not brows:
+            continue
+        p = m.players[slot]
+        n = max(r["n"] for r in brows)
+        w(f"## How you compare with top-tier {p.hero} players")
+        w("")
+        w(f"Your numbers in this game next to recent {p.hero} games at Phantom+ (up to {n} games). "
+          "**Better than** = share of those games you beat on that measure; under 20% is flagged.")
+        if n < 15:
+            w("")
+            w(f"> Only {n} top-tier games collected so far - treat these as rough.")
+        w("")
+        w("| Measure | You | Top tier: 25% / median / 75% | Better than |")
+        w("|---|---|---|---|")
+        for r in brows:
+            share = r["key"].endswith("share") or r["key"] == "fight_presence"
+            f = (lambda v: f"{v:.0%}") if share else (lambda v: f"{v:,.2f}" if abs(v) < 10 else f"{v:,.0f}")
+            flag = " ⚠" if r["better_than"] < 0.2 else (" ✅" if r["better_than"] >= 0.8 else "")
+            w(f"| {r['label']} | {f(r['you'])} | {f(r['p25'])} / {f(r['p50'])} / {f(r['p75'])} | {r['better_than']:.0%}{flag} |")
+        w("")
+
     # ----- team fight damage
     rows = extras.get("fight_damage") or []
     if rows:

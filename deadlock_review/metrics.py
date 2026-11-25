@@ -116,3 +116,28 @@ def match_metrics(m: Match) -> list[dict]:
             **player_metrics(m, p, fights, damage_rows),
         })
     return rows
+
+
+def compare_to_baseline(m: Match, p: Player, summary: dict, fights=None, damage_rows=None) -> list[dict]:
+    """Your metrics next to top-tier players of the same hero.
+
+    `better_than` = share of top-tier games you did better than on that metric
+    (direction-aware: fewer deaths is better, more fight damage is better)."""
+    base = (summary.get("heroes") or {}).get(str(p.hero_id))
+    if not base:
+        return []
+    mine = player_metrics(m, p, fights, damage_rows)
+    out = []
+    for key, (label, higher_better) in METRICS.items():
+        b = base["metrics"].get(key)
+        v = mine.get(key)
+        if not b or v is None:
+            continue
+        vals = b["values"]
+        below = sum(1 for x in vals if x < v)
+        equal = sum(1 for x in vals if x == v)
+        pct = (below + equal / 2) / len(vals)
+        better_than = pct if higher_better else 1 - pct
+        out.append({"key": key, "label": label, "you": v, "p25": b["p25"], "p50": b["p50"], "p75": b["p75"],
+                    "n": b["n"], "better_than": better_than})
+    return out

@@ -46,6 +46,24 @@ cost the team (death timer length, objectives lost while dead, fights lost).
 Hero-specific settings (ultimate radius, escape ability, key items, tips) live in
 `deadlock_review/heroes.py`. Dynamo, Wraith and Ivy are configured; other heroes use defaults.
 
+## Top-tier baselines (v2)
+
+```bash
+python -m deadlock_review.collect --heroes Dynamo,Wraith,Ivy --matches 20
+```
+
+Finds recent Phantom+ matches with each hero, analyzes their replays (5 queries per match,
+throttled to 150 per hour) and stores one row per player in `baselines/raw.jsonl`, so every
+match also adds data for the other 11 heroes. `baselines/summary.json` holds percentiles per
+hero and measure. When it exists, reports add a **How you compare with top-tier players**
+table and flag measures where you did worse than 80% of top-tier games (once at least
+15 games are collected for that hero).
+
+Measures: deaths per 10 min, share of deaths with no ally within 30 m, team fights
+attended, fight damage vs expected, ultimates per 10 min, enemies caught and allies close
+per ultimate, seconds the ultimate sat ready, distance to the nearest ally, souls per
+minute at 10 and 20 min, and deaths before 10:00.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).
