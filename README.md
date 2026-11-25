@@ -52,7 +52,8 @@ Hero-specific settings (ultimate radius, escape ability, key items, tips) live i
 python -m deadlock_review.collect --heroes Dynamo,Wraith,Ivy --matches 20
 ```
 
-Finds recent Phantom+ matches with each hero, analyzes their replays (5 queries per match,
+Finds recent Phantom+ matches with each hero, skips those without a stored replay (checked
+for free through the salts endpoint, since most recent matches have none), analyzes the rest (5 queries per match,
 throttled to 150 per hour) and stores one row per player in `baselines/raw.jsonl`, so every
 match also adds data for the other 11 heroes. `baselines/summary.json` holds percentiles per
 hero and measure. When it exists, reports add a **How you compare with top-tier players**

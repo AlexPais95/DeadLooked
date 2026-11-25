@@ -35,6 +35,7 @@ class Api:
         self.verbose = verbose
         self.session = requests.Session()
         self.session.headers["User-Agent"] = "deadlock-review/0.1"
+        self.query_times: list[float] = []  # replay queries actually submitted (for throttling)
 
     # ------------------------------------------------------------------ utils
     def _log(self, msg: str) -> None:
@@ -99,6 +100,14 @@ class Api:
         return self._get_json("/v1/analytics/hero-stats", params, max_age=DAY)
 
     # ----------------------------------------------------------- demo queries
+    def has_replay(self, match_id: int) -> bool | None:
+        """Whether a replay file is stored for the match, from its salts (does not use the
+        replay-query budget). None = unknown (salts not stored)."""
+        r = self.session.get(f"{BASE}/v1/matches/{match_id}/salts", params={"disable_steam": "true"}, timeout=60)
+        if r.status_code != 200:
+            return None
+        return bool(r.json().get("replay_salt"))
+
     def demo_query(self, match_id: int, sql: str, name: str) -> list[dict]:
         """Run SQL against the match replay. Results are cached per (match, name, sql)."""
         cp = self._cache_path(f"demo:{match_id}:{name}:{sql}", ".ndjson")
@@ -107,7 +116,14 @@ class Api:
 
         self._log(f"replay query '{name}' for match {match_id}")
         body = {"match_id": match_id, "query": sql, "format": "ndjson"}
-        r = self.session.post(BASE + "/v1/matches/demo/query", json=body, timeout=60)
+        for attempt in range(4):
+            self.query_times.append(time.time())
+            r = self.session.post(BASE + "/v1/matches/demo/query", json=body, timeout=60)
+            if r.status_code != 429:
+                break
+            wait = int(r.headers.get("retry-after") or 600)
+            print(f"[api] replay rate limit hit (HTTP 429), waiting {wait / 60:.0f} min", flush=True)
+            time.sleep(min(wait, 900))
         if r.status_code not in (200, 201, 202):
             raise ApiError(f"replay query '{name}' rejected: HTTP {r.status_code}: {r.text[:400]}")
         job = r.json()["job_id"]

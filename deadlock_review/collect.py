@@ -30,23 +30,23 @@ QUERIES_PER_MATCH = 5
 
 
 class Throttle:
-    """Keeps replay queries under `per_hour`, counting only queries actually sent."""
+    """Keeps replay queries under `per_hour`, counting only queries the API client actually sent
+    (a match whose replay is missing costs 1 query, not 5)."""
 
     def __init__(self, api: Api, per_hour: int):
-        self.api, self.per_hour, self.sent = api, per_hour, []
+        self.api, self.per_hour = api, per_hour
 
     def wait_for(self, n: int) -> None:
         while True:
             now = time.time()
-            self.sent = [t for t in self.sent if now - t < 3600]
-            if len(self.sent) + n <= self.per_hour:
+            sent = [t for t in self.api.query_times if now - t < 3600]
+            self.api.query_times[:] = sent
+            if len(sent) + n <= self.per_hour:
                 return
-            wait = 3600 - (now - self.sent[0]) + 1
-            print(f"[collect] replay budget used ({len(self.sent)}/{self.per_hour} this hour), waiting {wait / 60:.0f} min")
+            wait = 3600 - (now - sent[0]) + 1
+            print(f"[collect] replay budget used ({len(sent)}/{self.per_hour} this hour), waiting {wait / 60:.0f} min",
+                  flush=True)
             time.sleep(min(wait, 600))
-
-    def record(self, n: int) -> None:
-        self.sent += [time.time()] * n
 
 
 def collected_ids() -> set[int]:
@@ -76,20 +76,22 @@ def collect(api: Api, heroes: list[str], per_hero: int, min_badge: int, days: in
         if hid is None:
             print(f"[collect] unknown hero {hero}")
             continue
-        candidates = [mid for mid in find_matches(api, hid, min_badge, days, per_hero * 3) if mid not in done]
+        candidates = [mid for mid in find_matches(api, hid, min_badge, days, per_hero * 6) if mid not in done]
         got = 0
         for mid in candidates:
             if got >= per_hero:
                 break
+            if api.has_replay(mid) is False:
+                print(f"[collect] {mid}: no replay stored, skipped (free check)", flush=True)
+                continue
             throttle.wait_for(QUERIES_PER_MATCH)
             try:
                 m = Match(api, mid)
             except Exception as e:
-                print(f"[collect] {mid}: metadata failed ({e})")
+                print(f"[collect] {mid}: metadata failed ({e})", flush=True)
                 continue
-            throttle.record(QUERIES_PER_MATCH)
             if not m.replay_ok:
-                print(f"[collect] {mid}: replay unavailable, skipped ({m.replay_error})")
+                print(f"[collect] {mid}: replay unavailable, skipped ({m.replay_error})", flush=True)
                 continue
             rows = match_metrics(m)
             with RAW.open("a") as fh:
