@@ -45,8 +45,8 @@ def main(argv=None) -> int:
     if focus and not a.no_benchmarks:
         bench = load_benchmarks(m, {m.players[s].hero_id for s in focus}, a.min_badge)
 
-    fights, findings = analyze(m, focus, bench)
-    md = render(m, fights, findings, focus)
+    fights, findings, extras = analyze(m, focus, bench)
+    md = render(m, fights, findings, focus, extras)
     out = Path(a.out or f"reports/{a.match_id}.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md)

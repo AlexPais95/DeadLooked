@@ -21,7 +21,7 @@ The report is written to `reports/<match_id>.md`.
 | `--min-badge N` | Rank used for benchmarks (default 90 = Phantom and above) |
 | `--out FILE` | Where to write the report |
 
-Each match costs **4 replay queries**. The API allows 200 per hour per IP, and results are
+Each match costs **5 replay queries**. The API allows 200 per hour per IP, and results are
 cached in `.cache/`, so re-running a report is free.
 
 ## What it checks (v0.1)
@@ -35,6 +35,8 @@ cached in `.cache/`, so re-running a report is free.
 - Deaths: alone (no ally within 30 m), outnumbered, killed during an enemy ultimate, died with escape or ultimate available, objectives lost while dead
 - Missing a team fight (more than 60 m from every death in it), worse when the ultimate was ready
 - Ultimate quality: enemies caught, allies close enough to follow up, kills and losses in the next 15 s
+- **Team fight damage:** damage to enemy heroes in each fight compared with an *expected* share, so players are judged against teammates in the same fight. The expected share uses the hero's role (damage per soul for that hero across recent matches), souls at the time, and seconds the player was actually in the fight (alive, and within 60 m or trading damage). Under 50% is flagged, 160%+ is highlighted, and short appearances aren't judged
+- **Ultimate timeline:** cooldown after each cast from the ultimate's upgrades owned at the time and cooldown items (Compress Cooldown only if imbued into the ultimate), with Refresher resets
 - 3+ deaths before 10:00
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
 
@@ -57,7 +59,8 @@ Hero-specific settings (ultimate radius, escape ability, key items, tips) live i
 
 ## Limitations
 
-- Ultimate availability uses the **base cooldown**, ignoring cooldown reduction, so "ultimate ready" is conservative.
+- Ultimate cooldown includes upgrades and cooldown items, but not on-proc effects (e.g. Indomitable's refund). Items bought while the ultimate is on cooldown are applied from the next cast. Item reductions are stacked multiplicatively.
+- Fight damage counts damage only. Healing, barriers and crowd control aren't credited yet, so supports can look low in close fights.
 - Only abilities in `ImportantAbilityUsedEvent` are visible. Most ultimates and key abilities are there, but not every cast.
 - Positions are sampled once per second.
 - Abilities that move a hero (e.g. Doorman's Hotel Guest) make positions misleading; deaths during an enemy ultimate are labelled as such instead of "isolated".

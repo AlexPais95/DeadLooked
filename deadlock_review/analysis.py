@@ -118,24 +118,68 @@ def _killer_ult(m: Match, killer: Player | None, t: float):
 
 
 # ---------------------------------------------------------------- ultimates
-def ult_windows(m: Match, p: Player):
-    """Casts of the ultimate and the times it was (at least) ready, using base cooldown.
+def _num(v) -> float:
+    try:
+        return float(str(v).rstrip("m"))
+    except (TypeError, ValueError):
+        return 0.0
 
-    Base cooldown ignores cooldown reduction, so 'ready' is conservative (it was ready
-    at least from then on)."""
+
+def ability_cooldown_at(m: Match, p: Player, cls: str, t: float) -> tuple[float | None, list[str]]:
+    """Cooldown of an ability at time t: base cooldown, minus ability upgrades owned
+    (e.g. Doorman Hotel Guest T1 -20s), times cooldown reduction from items owned.
+    Imbued items (Compress Cooldown) only count when imbued into this ability.
+    Item reductions are stacked multiplicatively (conservative if the game adds them)."""
+    base = _cooldown(m, cls)
+    if base is None:
+        return None, []
+    info = m.items_by_class.get(cls) or {}
+    notes = []
+    level = sum(1 for tt, cn in p.ability_ups if cn == cls and tt <= t) - 1  # first entry = unlock
+    for up in (info.get("upgrades") or [])[:max(0, level)]:
+        for pu in up.get("property_upgrades", []):
+            if pu.get("name") == "AbilityCooldown" and not pu.get("upgrade_type"):
+                base += _num(pu.get("bonus"))
+                notes.append(f"upgrade {pu.get('bonus')}s")
+    mult = 1.0
+    for it in p.items:
+        if it.t > t or (it.sold_t and it.sold_t <= t):
+            continue
+        iinfo = m.items_by_id.get(it.item_id) or {}
+        cdr = _num(((iinfo.get("properties") or {}).get("CooldownReduction") or {}).get("value"))
+        if not cdr:
+            continue
+        if iinfo.get("imbue") and it.imbued_ability_id != info.get("id"):
+            continue
+        mult *= 1 - cdr / 100
+        notes.append(f"{it.name} -{cdr:g}%")
+    return max(1.0, base * mult), notes
+
+
+def ult_windows(m: Match, p: Player):
+    """Casts of the ultimate and the windows when it was ready.
+
+    The cooldown after each cast uses the upgrades and cooldown items owned at that
+    moment; a Refresher activation makes the ultimate ready again."""
     ult = _slot_class(m, p, "signature4")
     if not ult:
         return None, [], []
     unlock = next((t for t, cn in p.ability_ups if cn == ult), None)
-    casts = [c.t for c in p.casts if c.ability == ult]
-    cd = _cooldown(m, ult)
-    if unlock is None or cd is None:
+    casts = sorted(c.t for c in p.casts if c.ability == ult)
+    refresher = sorted(c.t for c in p.casts if c.ability == "upgrade_refresher")
+    if unlock is None or _cooldown(m, ult) is None:
         return ult, casts, []
     ready, start = [], unlock
     for c in casts + [m.duration]:
         if c > start:
             ready.append((start, c))
+        if c >= m.duration:
+            break
+        cd, _ = ability_cooldown_at(m, p, ult, c)
         start = c + cd
+        refresh = next((r for r in refresher if c < r < start), None)
+        if refresh is not None:
+            start = refresh
     return ult, casts, ready
 
 
@@ -239,7 +283,7 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 elif ult_up and not any(f.start - 5 <= t <= f.end + 5 for t in casts) and c["ult_kind"] == "aoe":
                     findings.append(Finding(p.slot, p.team, f.end, "ult_unused_fight", 2.0 if lost else 1.0,
                                             f"In the fight at {fmt_t(f.end)} but didn't use your ultimate",
-                                            "It was ready (base cooldown, so possibly earlier)."))
+                                            "Cooldown calculated from your upgrades and cooldown items."))
 
         # ultimate quality
         if m.replay_ok and ult_logged:
@@ -276,7 +320,18 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         if b and p.slot in focus_slots:
             findings += _benchmark_findings(m, p, b)
 
-    return fights, findings
+    extras = {"fight_damage": [], "team_damage": [], "ult": {}}
+    if m.replay_ok and fights:
+        eff = hero_efficiency(m)
+        rows, team_rows = fight_damage(m, fights, eff)
+        findings += fight_damage_findings(m, rows)
+        extras["fight_damage"], extras["team_damage"] = rows, team_rows
+    for s in focus_slots:
+        p = m.players[s]
+        ult, casts, ready = ult_windows(m, p)
+        if ult and casts:
+            extras["ult"][s] = [(c, *ability_cooldown_at(m, p, ult, c)) for c in casts]
+    return fights, findings, extras
 
 
 def _benchmark_findings(m: Match, p: Player, b: dict) -> list[Finding]:
@@ -340,4 +395,119 @@ def load_benchmarks(m: Match, hero_ids: set[int], min_badge: int = HIGH_BADGE) -
             ref = {"first_maxed": _first_maxed(seq), "matches": top["matches"],
                    "win_rate": 100 * top["wins"] / max(1, top["matches"])}
         out[hid] = {"avg_buy": avg_buy, "ability_order": ref}
+    return out
+
+
+# ------------------------------------------------------------ fight damage
+LOW_RATIO = 0.5  # below half of the expected share = clearly underperformed
+HIGH_RATIO = 1.6
+MIN_PRESENT_S = 5  # less time than this in a fight is too little to judge
+MIN_EXPECTED_DMG = 250
+
+
+@dataclass
+class FightDamage:
+    fight: Fight
+    player: Player
+    present_s: int
+    damage: int
+    expected: float
+    ratio: float | None
+
+
+def hero_efficiency(m: Match) -> dict[int, float]:
+    """Damage to heroes per soul of net worth, per hero, over recent matches.
+
+    This is the "how much impact is this hero supposed to have" baseline: a support
+    like Ivy deals far less damage per soul than Haze, so it is expected to deal less."""
+    try:
+        rows = m.api.hero_stats()
+    except Exception as e:
+        print(f"[bench] hero stats unavailable: {e}")
+        return {}
+    out = {}
+    for r in rows:
+        if r.get("total_net_worth"):
+            out[r["hero_id"]] = r["total_player_damage"] / r["total_net_worth"]
+    return out
+
+
+def _fight_window(f: Fight) -> tuple[int, int]:
+    return f.deaths[0][0] - 15, f.deaths[-1][0] + 3
+
+
+def _present_seconds(m: Match, p: Player, f: Fight) -> int:
+    """Seconds the player was alive and taking part in the fight: within ABSENT_M of any
+    death of the fight, or between their first and last hit on an enemy hero in it
+    (long-range heroes fight from further away)."""
+    t0, t1 = _fight_window(f)
+    hits = [t for t, v in p.damage_out.items() if t0 <= t <= t1 and v > 0]
+    h0, h1 = (min(hits), max(hits)) if hits else (None, None)
+    n = 0
+    for t in range(t0, t1 + 1):
+        if not p.alive_at(t):
+            continue
+        if h0 is not None and h0 <= t <= h1:
+            n += 1
+            continue
+        pos = p.at(t, tol=1)
+        if pos and pos[3] and any(dist_m(pos, d.pos) <= ABSENT_M for _, _, d in f.deaths):
+            n += 1
+    return n
+
+
+def fight_damage(m: Match, fights: list[Fight], eff: dict[int, float]):
+    """Damage each player dealt to enemy heroes in each fight, against an expected share.
+
+    Expected share inside a team = hero efficiency x souls at the time x seconds present,
+    normalised so the team's expected total equals what the team actually dealt.
+    So a player is judged against teammates in the same fight, adjusted for hero role,
+    items (souls) and how long they were alive there. A team-level line compares the
+    two teams' damage with their soul totals."""
+    rows: list[FightDamage] = []
+    team_rows: list[tuple[Fight, int, int, float]] = []  # fight, team, damage, share-of-souls
+    avg_eff = (sum(eff.values()) / len(eff)) if eff else 1.0
+    for f in fights:
+        t0, t1 = _fight_window(f)
+        per_team = {}
+        for team in (0, 1):
+            data = []
+            for p in m.team(team):
+                present = _present_seconds(m, p, f)
+                dmg = sum(v for t, v in p.damage_out.items() if t0 <= t <= t1)
+                weight = eff.get(p.hero_id, avg_eff) * m.networth_at(p, f.deaths[0][0]) * present
+                data.append((p, present, dmg, weight))
+            total_dmg = sum(d[2] for d in data)
+            total_w = sum(d[3] for d in data) or 1.0
+            for p, present, dmg, weight in data:
+                exp = total_dmg * weight / total_w
+                ratio = dmg / exp if exp >= MIN_EXPECTED_DMG and present >= MIN_PRESENT_S else None
+                rows.append(FightDamage(f, p, present, dmg, exp, ratio))
+            per_team[team] = total_dmg
+        nw = {team: sum(m.networth_at(p, f.deaths[0][0]) for p in m.team(team)) for team in (0, 1)}
+        for team in (0, 1):
+            share = nw[team] / max(1, nw[0] + nw[1])
+            team_rows.append((f, team, per_team[team], share))
+    return rows, team_rows
+
+
+def fight_damage_findings(m: Match, rows: list[FightDamage]) -> list[Finding]:
+    out = []
+    for r in rows:
+        if r.ratio is None:
+            continue
+        lost = r.fight.winner is not None and r.fight.winner != r.player.team
+        if r.ratio < LOW_RATIO:
+            out.append(Finding(
+                r.player.slot, r.player.team, r.fight.end, "low_fight_damage", 1.0 + (1.0 if lost else 0),
+                f"Low damage in the fight at {fmt_t(r.fight.end)}: {r.damage:,} vs ~{r.expected:,.0f} expected "
+                f"({r.ratio:.0%}) over {r.present_s}s in the fight",
+                "Expected = your share of your team's damage given your hero, souls and time alive in the fight.",
+            ))
+        elif r.ratio >= HIGH_RATIO:
+            out.append(Finding(
+                r.player.slot, r.player.team, r.fight.end, "high_fight_damage", 0,
+                f"High damage in the fight at {fmt_t(r.fight.end)}: {r.damage:,} ({r.ratio:.0%} of expected)",
+                f"{r.present_s}s in the fight", good=True,
+            ))
     return out

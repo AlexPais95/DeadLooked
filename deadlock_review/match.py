@@ -65,6 +65,16 @@ class Cast:
 
 
 @dataclass
+class ItemBuy:
+    t: int
+    item_id: int
+    name: str
+    tier: int
+    sold_t: int | None
+    imbued_ability_id: int | None
+
+
+@dataclass
 class Player:
     slot: int
     team: int  # 0 / 1 as in metadata
@@ -80,7 +90,10 @@ class Player:
     ability_ups: list[tuple[int, str]] = field(default_factory=list)  # (t, class_name)
     nw_by_time: dict[int, int] = field(default_factory=dict)
     casts: list[Cast] = field(default_factory=list)
+    items: list[ItemBuy] = field(default_factory=list)
     entity: int | None = None
+    # hero damage dealt to enemy heroes, per game second
+    damage_out: dict[int, int] = field(default_factory=dict)
     # positions: per game second -> (x, y, hp, alive)
     track: dict[int, tuple[float, float, int, bool]] = field(default_factory=dict)
 
@@ -153,6 +166,8 @@ class Match:
             for it in p.get("items", []):
                 info = self.items_by_id.get(it["item_id"], {})
                 if info.get("type") == "upgrade":
+                    pl.items.append(ItemBuy(it["game_time_s"], it["item_id"], info["name"], info.get("item_tier", 0),
+                                            it.get("sold_time_s") or None, it.get("imbued_ability_id") or None))
                     pl.item_buys.append((it["game_time_s"], info["name"], info.get("item_tier", 0),
                                          it.get("sold_time_s") or None))
                 elif info.get("type") == "ability":
@@ -196,7 +211,7 @@ class Match:
             a = my - b * mx
         else:
             a, b = 0.0, 1 / TICKS_PER_SEC
-        self.tick_to_t = lambda tick: a + b * tick
+        self._tick_a, self._tick_b = a, b
 
         # entity -> player via hero id (heroes are unique per match)
         hero_to_slot = {p.hero_id: p.slot for p in self.players.values()}
@@ -214,6 +229,22 @@ class Match:
             x, y = world_xy(r["cx"], r["cy"], r["vx"], r["vy"])
             self.players[slot].track[t] = (x, y, r.get("hp") or 0, r.get("life") == 0)
 
+        # hero-to-hero damage, aggregated per second (needs the entity ids first)
+        ents = sorted(ent_to_slot)
+        if ents:
+            ids = ", ".join(str(e) for e in ents)
+            sql = ("SELECT CAST(tick / 64 AS INT) AS sec, entindex_attacker AS a, entindex_victim AS v, "
+                   "SUM(damage) AS dmg FROM DamageEvent "
+                   f"WHERE entindex_attacker IN ({ids}) AND entindex_victim IN ({ids}) "
+                   "AND entindex_attacker <> entindex_victim GROUP BY 1, 2, 3")
+            for r in self.api.demo_query(mid, sql, "hero_damage"):
+                att, vic = ent_to_slot.get(r["a"]), ent_to_slot.get(r["v"])
+                if att is None or vic is None or self.players[att].team == self.players[vic].team:
+                    continue
+                t = int(round(self.tick_to_t(r["sec"] * TICKS_PER_SEC + TICKS_PER_SEC // 2)))
+                dmg = self.players[att].damage_out
+                dmg[t] = dmg.get(t, 0) + (r["dmg"] or 0)
+
         # casts: attribute caster ids to heroes via the ability's owner
         caster_to_slot: dict[int, int] = {}
         for e in important:
@@ -228,6 +259,9 @@ class Match:
             self.players[slot].casts.append(
                 Cast(self.tick_to_t(e["tick"]), e["ability_name"], info.get("name", e["ability_name"]))
             )
+
+    def tick_to_t(self, tick: float) -> float:
+        return self._tick_a + self._tick_b * tick
 
     # ------------------------------------------------------------- helpers
     def near(self, who: Player, t: float, radius_m: float):
@@ -246,6 +280,17 @@ class Match:
             if d <= radius_m:
                 (allies if p.team == who.team else enemies).append((p, d))
         return sorted(allies, key=lambda z: z[1]), sorted(enemies, key=lambda z: z[1])
+
+    def networth_at(self, p: Player, t: int) -> int:
+        keys = sorted(p.nw_by_time)
+        i = bisect.bisect_right(keys, t) - 1
+        if i < 0:
+            return p.nw_by_time[keys[0]] if keys else 0
+        if i + 1 < len(keys):  # interpolate between snapshots
+            t0, t1 = keys[i], keys[i + 1]
+            n0, n1 = p.nw_by_time[t0], p.nw_by_time[t1]
+            return int(n0 + (n1 - n0) * (t - t0) / (t1 - t0))
+        return p.nw_by_time[keys[i]]
 
     def team_networth(self, team: int, t: int) -> int:
         tot = 0

@@ -92,6 +92,12 @@ class Api:
         }
         return self._get_json("/v1/analytics/ability-order-stats", params, max_age=DAY)
 
+    def hero_stats(self, min_badge: int | None = None, days: int = 30) -> list[dict]:
+        params = {"game_mode": "normal", "min_unix_timestamp": _day_floor() - days * DAY}
+        if min_badge:
+            params["min_average_badge"] = min_badge
+        return self._get_json("/v1/analytics/hero-stats", params, max_age=DAY)
+
     # ----------------------------------------------------------- demo queries
     def demo_query(self, match_id: int, sql: str, name: str) -> list[dict]:
         """Run SQL against the match replay. Results are cached per (match, name, sql)."""

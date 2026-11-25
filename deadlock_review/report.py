@@ -16,7 +16,8 @@ def _team_label(m: Match, team: int, focus_team: int | None) -> str:
 
 
 def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: set[int],
-           top_n: int = 8) -> str:
+           extras: dict | None = None, top_n: int = 8) -> str:
+    extras = extras or {}
     focus = [m.players[s] for s in focus_slots if s in m.players]
     focus_team = focus[0].team if focus else None
     L: list[str] = []
@@ -96,13 +97,56 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             w("**What went well:**")
             for f in good:
                 w(f"- {f.title} — {f.detail}")
-        if p.casts:
-            ult_cls = (m.hero_assets.get(p.hero_id, {}).get("items") or {}).get("signature4")
-            ults = [c for c in p.casts if c.ability == ult_cls]
-            if ults:
-                w("")
-                w(f"Ultimate casts: {', '.join(fmt_t(c.t) for c in ults)}")
+        ult_info = extras.get("ult", {}).get(p.slot)
+        if ult_info:
+            w("")
+            w("**Ultimate timeline** (cooldown from your upgrades and cooldown items at the time of each cast):")
+            w("")
+            w("| Cast | Cooldown | Ready again | Modifiers |")
+            w("|---|---|---|---|")
+            for t, cd, notes in ult_info:
+                ready = fmt_t(t + cd) if cd and t + cd < m.duration else "after the game ended"
+                w(f"| {fmt_t(t)} | {cd:.0f}s | {ready} | {', '.join(notes) or 'none'} |")
         w("")
+
+    # ----- team fight damage
+    rows = extras.get("fight_damage") or []
+    if rows:
+        w("## Team fight damage")
+        w("")
+        w("Damage to enemy heroes during each fight. **In fight** = seconds alive and either within 60 m of the fight or trading damage in it. "
+          "**Expected** is the player's share of their team's damage given hero role (damage per soul "
+          "for that hero across recent matches), souls at the time and seconds in the fight. "
+          "Perfect fights don't exist: under 50% of expected is flagged, 160%+ is highlighted.")
+        w("")
+        team_rows = extras.get("team_damage") or []
+        for f in fights:
+            fr = [r for r in rows if r.fight is f]
+            if not fr:
+                continue
+            win = "even" if f.winner is None else _team_label(m, f.winner, focus_team)
+            tr = {team: (dmg, share) for ff, team, dmg, share in team_rows if ff is f}
+            tot = sum(v[0] for v in tr.values()) or 1
+            w(f"**Fight {fmt_t(f.deaths[0][0])}–{fmt_t(f.end)}** — winner: {win}. Damage share: "
+              + " · ".join(f"team {team} {tr[team][0]:,} ({tr[team][0] / tot:.0%} of damage, {tr[team][1]:.0%} of souls)"
+                           for team in sorted(tr)))
+            w("")
+            w("| Team | Hero | In fight | Damage | Expected | Rating |")
+            w("|---|---|---|---|---|---|")
+            for r in sorted(fr, key=lambda r: (r.player.team != (focus_team if focus_team is not None else 0), -r.damage)):
+                if r.present_s == 0 and r.damage == 0:
+                    rating = "not there"
+                elif r.ratio is None:
+                    rating = "too short to judge"
+                elif r.ratio < 0.5:
+                    rating = f"**low ({r.ratio:.0%})**"
+                elif r.ratio >= 1.6:
+                    rating = f"**high ({r.ratio:.0%})**"
+                else:
+                    rating = f"ok ({r.ratio:.0%})"
+                mark = " ⬅" if r.player.slot in focus_slots else ""
+                w(f"| {r.player.team} | {r.player.hero}{mark} | {r.present_s}s | {r.damage:,} | {r.expected:,.0f} | {rating} |")
+            w("")
 
     # ----- everyone else
     w("## Other players - top issues")
