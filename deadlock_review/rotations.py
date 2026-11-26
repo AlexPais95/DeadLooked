@@ -184,7 +184,7 @@ def rotation_findings(m: Match, p: Player):
         if not impact:
             continue
         # carries farm side lanes: weight by how often top players in your role are away at this stage
-        from .counters import hero_roles
+        from .counters import hero_roles, role_plural
         from .expectations import expected_farming
         role = hero_roles(m.api).get(p.hero_id, ("Core", ""))[0]
         farm = expected_farming(p.hero_id, role, v.t)
@@ -193,7 +193,7 @@ def rotation_findings(m: Match, p: Player):
         found.append(Finding(p.slot, p.team, v.t, "missed_defense", impact,
                              f"{fmt_t(v.t)}: {v.kind} ({v.lane}) fell while you were alive and not fighting",
                              f"you were {v.closest_m:.0f} m away; {v.allies_there} teammate(s) defended it"
-                             + (f"; top-tier {{"Carry": "carries", "Frontliner": "frontliners", "Support": "supports"}.get(role, role.lower() + "s")} were away from the action in {farm:.0%} of such moments at this stage, "
+                             + (f"; top-tier {role_plural(role)} were away from the action in {farm:.0%} of such moments at this stage, "
                                 f"so it counts {weight:.0%}" if farm is not None else ""), expect=weight))
     return found
 
@@ -304,14 +304,14 @@ def needed_findings(m: Match, p: Player):
         cost = ", ".join([f"{h} died" for h in dead] + [f"lost the {k}" for k in lost])
         dist = statistics.median(x[2] for x in ep)
         # top-tier players in your role often farm at these moments too (carries ~half the time at 10-15 min)
-        from .counters import hero_roles
+        from .counters import hero_roles, role_plural
         from .expectations import expected_farming
         role = hero_roles(m.api).get(p.hero_id, ("Core", ""))[0]
         farm = expected_farming(p.hero_id, role, t0)
         weight = (1 - farm) if farm is not None else 1.0
         if weight < 0.6 and not lost:
             continue      # most top players in your role would also have been farming, and no objective fell
-        norm = (f"; top-tier {{"Carry": "carries", "Frontliner": "frontliners", "Support": "supports"}.get(role, role.lower() + "s")} were also farming far away in {farm:.0%} of such moments at this stage, "
+        norm = (f"; top-tier {role_plural(role)} were also farming far away in {farm:.0%} of such moments at this stage, "
                 f"so it counts {weight:.0%}" if farm is not None else "")
         found.append(Finding(p.slot, p.team, t0, "not_where_needed", (1.0 + 0.6 * len(dead) + 0.8 * len(lost)) * weight,
                              f"{fmt_t(t0)}–{fmt_t(t1)}: your team needed you and you were farming {dist:.0f} m away",

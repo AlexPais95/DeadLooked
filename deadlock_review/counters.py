@@ -290,6 +290,10 @@ def _healing_population(raw_path: str, cache_dir: str) -> tuple[float, ...]:
     return _population(raw_path, cache_dir)[0]
 
 
+def role_plural(role: str) -> str:
+    return {"Carry": "carries", "Frontliner": "frontliners", "Support": "supports"}.get(role, role.lower() + "s")
+
+
 def hero_roles(api, raw_path: str = "baselines/raw.jsonl", min_badge: int = 90) -> dict[int, tuple[str, str]]:
     """What each hero is normally played as at top tier: {hero_id: (role, why)}.
 

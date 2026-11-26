@@ -398,7 +398,7 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 lost = f.winner is not None and f.winner != p.team
                 ult_up = ult_logged and _ready_at(ready, f.start)
                 if dmin > ABSENT_M:
-                    from .counters import hero_roles
+                    from .counters import hero_roles, role_plural
                     from .expectations import expected_presence
                     role = hero_roles(m.api).get(p.hero_id, ("Core", ""))[0]
                     exp = expected_presence(p.hero_id, role, f.deaths[0][0])
@@ -407,7 +407,7 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                     title = f"Not in the fight at {fmt_t(f.end)} (closest {dmin:.0f} m)" + (
                         " with ultimate ready" if ult_up else "")
                     res = "your team lost it" if lost else ("your team won it" if f.winner == p.team else "even trade")
-                    norm = (f"top-tier {{"Carry": "carries", "Frontliner": "frontliners", "Support": "supports"}.get(role, role.lower() + "s")} join {pres:.0%} of fights at this stage, so it counts {pres:.0%}"
+                    norm = (f"top-tier {role_plural(role)} join {pres:.0%} of fights at this stage, so it counts {pres:.0%}"
                             if exp else "")
                     findings.append(Finding(p.slot, p.team, f.end, "absent_fight", impact, title,
                                             "; ".join(x for x in (res, norm, tips.get("ult_held", "") if ult_up else "") if x),
