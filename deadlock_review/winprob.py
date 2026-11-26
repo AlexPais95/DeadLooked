@@ -77,7 +77,7 @@ def collect(api: Api, n: int, days: int, min_badge: int, store: Path) -> list[di
             if line:
                 m = json.loads(line)
                 have[m["id"]] = m
-    max_id = None
+    max_id = (min(have) - 1) if have else None    # resume below what we already have
     t0 = int(time.time()) - days * DAY
     with store.open("a") as fh:
         while len(have) < n:
@@ -87,8 +87,13 @@ def collect(api: Api, n: int, days: int, min_badge: int, store: Path) -> list[di
                           order_by="match_id", order_direction="desc", limit=200)
             if max_id:
                 params["max_match_id"] = max_id
-            r = api.session.get(BASE + "/v1/matches/metadata", params=params, timeout=300)
-            if r.status_code == 429:
+            try:
+                r = api.session.get(BASE + "/v1/matches/metadata", params=params, timeout=300)
+            except Exception as e:      # connection reset, proxy hiccup: wait and retry the same page
+                print(f"[winprob] network error ({type(e).__name__}), retrying in 20 s", flush=True)
+                time.sleep(20)
+                continue
+            if r.status_code in (429, 502, 503, 504):
                 time.sleep(int(r.headers.get("retry-after") or 5))
                 continue
             r.raise_for_status()
