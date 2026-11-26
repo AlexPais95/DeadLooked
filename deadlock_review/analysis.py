@@ -35,6 +35,7 @@ class Finding:
     short: str = ""   # detail without the names (shown next to the pictures)
     wpa: float | None = None   # change in your team's win chance (-1..1), from wpa.py
     wpa_how: str = ""
+    context_only: bool = False   # its win-chance number is an estimate; the real swing is shown as context
 
 
 def rank_key(f: "Finding") -> float:

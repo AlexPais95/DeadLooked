@@ -766,7 +766,9 @@ def _ranked(items, tone: str, my_team: int = 0) -> str:
     for f in items:
         out.append(f'<li><div class="m-title">{E(f.title)}</div>'
                    f'<div class="impact" title="{E(f.wpa_how)}"><div class="bar"><i style="width:{mag(f) / top * 100:.0f}%"></i></div>'
-                   + (f'<span class="{"est" if "estimated" in f.wpa_how else ""}">{100 * f.wpa:+.1f}% win chance</span></div>'
+                   + (f'<span>counted in {E(f.wpa_how.split("already count for: ")[-1])}</span></div>'
+                      if f.wpa is not None and abs(f.wpa) < 0.0005 and "already count" in f.wpa_how else
+                      f'<span class="{"est" if "estimated" in f.wpa_how else ""}">{100 * f.wpa:+.1f}% win chance</span></div>'
                       if f.wpa is not None else f'<span>impact {f.impact:.1f}</span></div>')
                    + (_faces(f.people, my_team) if f.people else "")
                    + ((lambda d: f'<div class="m-detail">{E(d)}</div>' if d else "")
@@ -911,7 +913,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
                  f'<span>{_key("dead", "var(--muted)")}destroyed objective</span></div></div></section>')
 
     # mistakes and big plays, side by side
-    plays = sorted([f for f in good if f.wpa is None or f.wpa > 0.005], key=rank_key)
+    plays = sorted([f for f in good if f.wpa is None or f.wpa > 0.005 or "already count" in f.wpa_how], key=rank_key)
     L.append('<section><div class="two ranked">'
              '<div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated cost to your team</span>'
              '<h2>Biggest mistakes</h2></div>' + _ranked(bad[:top_n], "bad", p.team)

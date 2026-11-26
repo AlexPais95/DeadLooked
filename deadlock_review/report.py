@@ -84,7 +84,7 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
     for p in focus:
         pf = [f for f in findings if f.slot == p.slot]
         bad = sorted([f for f in pf if not f.good], key=rank_key)
-        good = sorted([f for f in pf if f.good and (f.wpa is None or f.wpa > 0.005)], key=rank_key)
+        good = sorted([f for f in pf if f.good and (f.wpa is None or f.wpa > 0.005 or "already count" in f.wpa_how)], key=rank_key)
         w(f"## Your biggest mistakes - {p.hero}")
         w("")
         w("Ranked by how much each one changed your team's chance of winning (win probability model "
@@ -99,7 +99,9 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             w("")
             w("**What went well:**")
             for f in good:
-                w(f"- {f.title}" + (f" ({100 * f.wpa:+.1f}% win chance)" if f.wpa is not None else "") + f" — {f.detail}")
+                note = (f" (counted in {f.wpa_how.split('already count for: ')[-1]})" if f.wpa is not None and abs(f.wpa) < 0.0005 and "already count" in f.wpa_how
+                        else f" ({100 * f.wpa:+.1f}% win chance)" if f.wpa is not None else "")
+                w(f"- {f.title}{note} — {f.detail}")
         ult_info = extras.get("ult", {}).get(p.slot)
         if ult_info:
             w("")

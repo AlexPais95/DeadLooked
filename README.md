@@ -114,23 +114,27 @@ hero alive ~0 early and +7% at 35 min; a Guardian +1%, a Walker +5%, a Base Guar
 the Patron's first phase +15% (on top of the souls they give). A death of your team typically costs
 under 1% before 20 min and 4-9% after 25 min (souls, objectives and deaths that usually follow).
 
-Every finding is then scored by how much it moved your team's win chance:
+Every finding is then scored by how much it moved your team's win chance, without counting any
+swing twice. Deaths and objectives less than 20 s apart form one episode; its real swing (5 s before
+the first event to 15 s after the last) is measured once and split between its events in proportion
+to their typical value at that minute (a death: what deaths usually cost then; an objective: the
+model's value for it), so the credits add up exactly to the real swing. Findings then take credits:
 
-| Finding | Window |
+| Finding | Credit |
 |---|---|
-| Death | 2 s before to 45 s after, shared between your team's deaths in that window |
-| Objective lost / taken | 2 s before it fell to 10 s after |
-| Ultimate | 1 s before the cast to 15 s after |
-| Multi-kill | 2 s before the first kill to 20 s after the last |
+| Death | that death's share |
+| Objective lost / taken | that objective's share |
+| Ultimate | shares of the deaths, within 15 s, of the heroes it caught and your nearby teammates |
+| Multi-kill | shares of your kills not already counted in an ultimate ("counted in ..." otherwise) |
 | Missed fight | the fight's swing, shared between the teammates who weren't there |
-| Fight damage | your sixth of the fight's swing |
+| Fight damage | no claim of its own; the fight's swing is shown as context |
 
-Mistakes and big plays are ranked by it ("-9.2% win chance"). Findings without a clean window
+Each side claims an event once (an enemy's death can be their mistake and your play, but not two
+of your plays). Mistakes and big plays are ranked by it ("-9.2% win chance"). Findings without a clean window
 ("3+ deaths before 10:00", "farming while needed") are converted from their old impact score with
 this match's ratio between impact and measured swings, and marked as estimates. The report adds a
-win-chance chart with the biggest swings and each fight's swing. Limits: windows can overlap (a
-Singularity and the double kill right after it share the same fight), and the model knows souls,
-objectives and heroes alive but not items, ultimates ready or positions.
+win-chance chart with the biggest swings and each fight's swing. Limits: the model knows souls, objectives and heroes alive but not items, ultimates ready or positions;
+near the end of a game the win chance is close to 100%, so late plays show small numbers.
 
 ## How it works
 
