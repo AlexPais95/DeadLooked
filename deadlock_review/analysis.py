@@ -454,8 +454,17 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         for p in m.players.values():
             findings += rotation_findings(m, p) + needed_findings(m, p)
         extras["objectives"] = {s: objective_visits(m, m.players[s]) for s in focus_slots}
+    extras["counters"] = {}
     for s in focus_slots:
         findings += play_findings(m, m.players[s])
+        from .counters import counter_findings, counter_needs
+        try:
+            needs = counter_needs(m, m.players[s])
+        except Exception as e:  # counters are extra; never break the report
+            print(f"[warn] counter items skipped: {e}")
+            needs = []
+        extras["counters"][s] = needs
+        findings += counter_findings(m, m.players[s], needs)
     for s in focus_slots:
         p = m.players[s]
         ult, casts, ready = ult_windows(m, p)

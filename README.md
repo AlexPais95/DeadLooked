@@ -47,6 +47,7 @@ cached in `.cache/`, so re-running a report is free.
 - 3+ deaths before 10:00
 - **Laning phase:** before 10:00 only your own lane counts. Fights and objectives in other lanes aren't held against you (missing them, defending them), unless you joined the fight
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
+- **Items to answer the enemy team** (`counters.py`): anti-heal when an enemy healed more per minute than 80% of players in the collected top-tier games; spirit or bullet resist when 60%+ of the damage you took was that type (replay damage types); spirit or bullet shred when 60%+ of your damage was that type and enemies built 25%+ of the matching resist; silence, disarm or stun for their carry (the richer enemy with the most damage to your team). Items are picked from the item assets by what they do (property values and descriptions), so the lists follow patches. Each need says whether and when you bought an answer; clear needs you never answered are listed as mistakes
 
 Findings are ranked by an **impact** score: a hand-made estimate of how much the mistake
 cost the team (death timer length, objectives lost while dead, fights lost).

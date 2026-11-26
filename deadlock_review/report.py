@@ -136,6 +136,21 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             w(f"| {fmt_t(v.t)} | {v.kind} | {v.lane} | {'lost it' if v.lost else 'took it'} | {you} | {v.allies_there} |")
         w("")
 
+    # ----- counter items
+    for slot, needs in (extras.get("counters") or {}).items():
+        if not needs:
+            continue
+        w(f"## Items to answer them ({m.players[slot].hero})")
+        w("")
+        for n in needs:
+            got = (f"you bought {n.bought[0][0]} at {fmt_t(n.bought[0][1])}" if n.bought else "**you didn't buy one**")
+            since = f" Clear from about {fmt_t(n.since)}." if n.since else ""
+            w(f"- **{n.title}** ({'clear need' if n.strength >= 0.6 else 'worth considering'}) - {got}  ")
+            w(f"  {n.why.rstrip('.')}.{since}  ")
+            options = ", ".join(f"{i['name']} (T{i.get('item_tier')})" for i in n.items[:6])
+            w(f"  Options: {options}")
+        w("")
+
     # ----- comparison with top-tier baselines
     for slot, brows in (extras.get("baseline") or {}).items():
         if not brows:

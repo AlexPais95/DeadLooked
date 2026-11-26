@@ -220,6 +220,27 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .obj .faces .side { gap: 6px; }
 .obj .face { width: 26px; height: 26px; }
 
+/* counter items */
+.ctrs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr)); gap: 12px; }
+.ctr { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 12px; align-content: start; }
+.ctr.missing { border-left: 4px solid var(--bad); } .ctr.answered { border-left: 4px solid var(--good); }
+.ctr-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; flex-wrap: wrap; }
+.ctr-head h3 { font-size: 1.35rem; margin-top: 4px; }
+.ctr-head .pill { white-space: normal; text-align: left; }
+.ctr-why { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.ctr-why .side { display: flex; flex-wrap: wrap; gap: 6px; max-width: 120px; padding-top: 2px; }
+.ctr-why p { font-size: .9rem; color: var(--fg); }
+.ctr-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.it { display: grid; justify-items: center; gap: 4px; text-align: center; padding: 8px 4px; border-radius: 6px;
+  background: var(--raise); border: 1px solid var(--line); --slot: var(--muted); }
+.it.weapon { --slot: var(--amber); } .it.vitality { --slot: var(--good); } .it.spirit { --slot: #a77be0; }
+.it .ico { width: 44px; height: 44px; border-radius: 8px; background: color-mix(in srgb, var(--slot) 22%, var(--surface)) center / 72% no-repeat;
+  border: 2px solid var(--slot); }
+.it b { font-size: .76rem; line-height: 1.2; font-weight: 600; }
+.it small { font-size: .68rem; color: var(--muted); }
+.it.owned { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass); }
+.it.owned small { color: var(--brass); font-weight: 600; }
+
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: .88rem; }
@@ -630,15 +651,17 @@ def _portrait_css(m: Match) -> str:
     return "".join(rules)
 
 
+def _face(h, team, died, you) -> str:
+    label = f"{h}{' (you)' if you else ''}{' - died' if died else ''}"
+    return (f'<span class="face t{team}{" dead" if died else ""}{" me" if you else ""}" title="{E(label)}" '
+            f'role="img" aria-label="{E(label)}"><i class="h-{_slug(h)}"></i></span>')
+
+
 def _faces(people, my_team: int) -> str:
     """Your side, 'vs', the enemy side. Died = greyed with a red cross; you = gold ring."""
     if not people:
         return ""
-    def face(h, team, died, you):
-        state = "died there" if died else ("you" if you else "")
-        label = f"{h}{' (you)' if you else ''}{' - died' if died else ''}"
-        return (f'<span class="face t{team}{" dead" if died else ""}{" me" if you else ""}" title="{E(label)}" '
-                f'role="img" aria-label="{E(label)}"><i class="h-{_slug(h)}"></i></span>')
+    face = _face
     ours = [x for x in people if x[1] == my_team]
     theirs = [x for x in people if x[1] != my_team]
     def half(xs, label, cls):
@@ -666,6 +689,48 @@ def _ranked(items, tone: str, my_team: int = 0) -> str:
                       ((f.short if f.people else f.detail).strip().rstrip(";").strip()))
                    + "</li>")
     out.append("</ol>")
+    return "".join(out)
+
+
+def _item_icon(m: Match, item: dict) -> str:
+    import base64
+    try:
+        got = m.api.item_image(item)
+    except Exception:
+        got = None
+    if not got:
+        return '<span class="ico"></span>'
+    data, mime = got
+    return f'<span class="ico" style="background-image:url(data:{mime};base64,{base64.b64encode(data).decode()})"></span>'
+
+
+def _counters(m: Match, p, needs) -> str:
+    out = ['<div class="ctrs">']
+    for n in needs:
+        owned = {b[0]: b for b in n.bought}
+        items = sorted(n.items, key=lambda i: (i["name"] not in owned,))[:6]
+        if n.bought:
+            name, t, sold = n.bought[0]
+            status = f'<span class="pill good">You bought {E(name)} at {fmt_t(t)}</span>'
+            cls = "answered"
+        else:
+            status = '<span class="pill bad">You didn\'t buy one</span>'
+            cls = "missing"
+        level = "Clear need" if n.strength >= 0.6 else "Worth considering"
+        tiles = []
+        for i in items:
+            b = owned.get(i["name"])
+            sub = f"bought {fmt_t(b[1])}" if b else f"T{i.get('item_tier')} · {i.get('cost', 0):,}"
+            tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}" '
+                         f'title="{E(i["name"])}: tier {i.get("item_tier")}, {i.get("cost", 0):,} souls">'
+                         f'{_item_icon(m, i)}<b>{E(i["name"])}</b>'
+                         f'<small class="num">{sub}</small></div>')
+        out.append(f'<article class="ctr {cls}"><div class="ctr-head"><div><span class="eyebrow">{level}</span>'
+                   f'<h3>{E(n.title)}</h3></div>{status}</div>'
+                   f'<div class="ctr-why"><span class="side">{"".join(_face(*h) for h in n.heroes)}</span>'
+                   f'<p>{E(n.why.rstrip("."))}' + (f'. Clear from about {fmt_t(n.since)}.' if n.since else ".") + '</p></div>'
+                   f'<div class="ctr-items">{"".join(tiles)}</div></article>')
+    out.append("</div>")
     return "".join(out)
 
 
@@ -739,6 +804,14 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
              '<h2>Big plays</h2></div>'
              + (_ranked(plays[:top_n], "good", p.team) if plays else '<p class="muted">No standout plays found this game.</p>')
              + '</div></div>' + FACES_KEY + '</section>')
+
+    # counter items
+    needs = (extras.get("counters") or {}).get(p.slot) or []
+    if needs:
+        L.append('<section><div class="sec-head"><span class="eyebrow">Based on what the enemy team did this game</span>'
+                 '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the '
+                 'numbers behind it, the items that do it (from the game\'s item data) and whether you bought one.</p></div>'
+                 + _counters(m, p, needs) + "</section>")
 
     # comparison
     if base:

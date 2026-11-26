@@ -131,6 +131,18 @@ class Api:
             cp.write_bytes(r.content)
         return cp.read_bytes(), ("image/webp" if url.endswith(".webp") else "image/png")
 
+    def item_image(self, item: dict) -> tuple[bytes, str] | None:
+        """(image bytes, mime type) of an item's icon."""
+        url = item.get("shop_image_webp") or item.get("image_webp") or item.get("shop_image") or item.get("image")
+        if not url:
+            return None
+        cp = self._cache_path("img:" + url, ".img")
+        if not cp.exists():
+            r = self.session.get(url, timeout=60)
+            r.raise_for_status()
+            cp.write_bytes(r.content)
+        return cp.read_bytes(), ("image/webp" if url.endswith(".webp") else "image/png")
+
     def patron_image(self, team: int) -> tuple[bytes, str] | None:
         """(image bytes, mime type) of a team's Patron mask: team 0 Hidden King, team 1 Archmother."""
         want = "npc_boss_tier3" if team == 0 else "alt_npc_boss_tier3"
