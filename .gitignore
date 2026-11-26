@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 reports/
+*.bundle
+baselines/*.log
+baselines/*.tmp
