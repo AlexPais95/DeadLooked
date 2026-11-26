@@ -392,8 +392,10 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                         f"allies within 15 m: {', '.join(a[0].hero for a in close_allies) or 'none'}; "
                         f"next 15s: {len(kills)} enemy deaths, {len(losses)} of yours")
                 if c["ult_kind"] == "aoe" and len(caught) >= 2 and len(kills) > len(losses):
-                    findings.append(Finding(p.slot, p.team, t, "good_ult", 0, f"Good {name} at {fmt_t(t)}",
-                                            desc, good=True))
+                    score = 1.5 + 0.8 * (len(kills) - len(losses)) + 0.3 * len(caught)
+                    findings.append(Finding(p.slot, p.team, t, "good_ult", score,
+                                            f"{name} at {fmt_t(t)} caught {len(caught)} and won the exchange "
+                                            f"{len(kills)}–{len(losses)}", desc, good=True))
                 elif c["ult_kind"] in ("aoe", "target") and caught and not close_allies:
                     findings.append(Finding(p.slot, p.team, t, "ult_no_followup", 2.0 + 0.5 * len(losses),
                                             f"{name} at {fmt_t(t)} with no ally within 15 m",
@@ -426,6 +428,8 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         for p in m.players.values():
             findings += rotation_findings(m, p) + needed_findings(m, p)
         extras["objectives"] = {s: objective_visits(m, m.players[s]) for s in focus_slots}
+    for s in focus_slots:
+        findings += play_findings(m, m.players[s])
     for s in focus_slots:
         p = m.players[s]
         ult, casts, ready = ult_windows(m, p)
@@ -591,6 +595,42 @@ def fight_damage(m: Match, fights: list[Fight], eff: dict[int, float]):
     return rows, team_rows
 
 
+PLAY_OBJECTIVE = {"Guardian": 0.8, "Walker": 1.5, "Base Guardian": 1.2, "Shrine": 1.8, "Patron": 3.0}
+MULTI_KILL = {2: "Double kill", 3: "Triple kill", 4: "Quadra kill", 5: "Penta kill", 6: "Hexa kill"}
+
+
+def play_findings(m: Match, p: Player) -> list[Finding]:
+    """Big plays: multi-kills (your kills within 12 s of each other) and objectives your team
+    took with you there."""
+    out = []
+    mine = sorted((d.t, q.hero) for q in m.players.values() if q.team != p.team
+                  for d in q.deaths if d.killer_slot == p.slot)
+    i = 0
+    while i < len(mine):
+        j = i
+        while j + 1 < len(mine) and mine[j + 1][0] - mine[j][0] <= 12:
+            j += 1
+        n = j - i + 1
+        if n >= 2:
+            names = [h for _, h in mine[i:j + 1]]
+            out.append(Finding(p.slot, p.team, mine[i][0], "multi_kill", 1.0 * n,
+                               f"{MULTI_KILL.get(n, f'{n} kills')} at {fmt_t(mine[i][0])}",
+                               f"you killed {', '.join(names)} within {mine[j][0] - mine[i][0]:.0f}s", good=True))
+        i = j + 1
+    if m.replay_ok:
+        from .rotations import objective_visits
+        for v in objective_visits(m, p):
+            if v.lost or not v.there:
+                continue
+            with_ = f"with {', '.join(v.allies)}" if v.allies else "on your own"
+            died = [h for h, t in v.deaths if t != p.team]
+            out.append(Finding(p.slot, p.team, v.t, "objective_taken", PLAY_OBJECTIVE.get(v.kind, 1.0),
+                               f"Took the {v.kind}" + ("" if v.lane == "base" else f" in the {v.lane}") + f" at {fmt_t(v.t)}",
+                               with_ + (f"; {', '.join(died)} died there" if died else "")
+                               + (f"; against {', '.join(v.enemies)}" if v.enemies else ", unopposed"), good=True))
+    return out
+
+
 def fight_damage_findings(m: Match, rows: list[FightDamage]) -> list[Finding]:
     out = []
     for r in rows:
@@ -606,8 +646,12 @@ def fight_damage_findings(m: Match, rows: list[FightDamage]) -> list[Finding]:
             ))
         elif r.ratio >= HIGH_RATIO:
             out.append(Finding(
-                r.player.slot, r.player.team, r.fight.end, "high_fight_damage", 0,
-                f"High damage in the fight at {fmt_t(r.fight.end)}: {r.damage:,} ({r.ratio:.0%} of expected)",
-                f"{r.present_s}s in the fight", good=True,
+                r.player.slot, r.player.team, r.fight.end, "high_fight_damage",
+                1.0 + min(2.0, r.ratio - HIGH_RATIO) + (0.5 if r.fight.winner == r.player.team else 0),
+                f"{r.ratio:.0%} of expected damage in the fight at {fmt_t(r.fight.deaths[0][0])}",
+                f"{r.damage:,} damage in {r.present_s}s; "
+                + ("your team won the fight" if r.fight.winner == r.player.team else
+                   "the fight was even" if r.fight.winner is None else "your team lost the fight anyway"),
+                good=True,
             ))
     return out

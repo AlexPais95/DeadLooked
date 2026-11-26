@@ -98,6 +98,13 @@ ol.mistakes li::before { content: counter(m); font: 800 1.6rem/1 var(--display);
 .impact { grid-column: 3; grid-row: 1 / span 2; display: grid; gap: 4px; justify-items: end; }
 .impact .bar { width: 100%; height: 6px; background: var(--raise); border-radius: 3px; overflow: hidden; }
 .impact .bar i { display: block; height: 100%; background: var(--bad); }
+ol.mistakes.good li { border-left: 3px solid var(--good); }
+ol.mistakes.bad li { border-left: 3px solid var(--bad); }
+ol.mistakes.good li::before { color: var(--good); }
+ol.mistakes.good .impact .bar i { background: var(--good); }
+.ranked .col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.map.big svg { max-width: 760px; }
+.map.big .legend { justify-content: center; margin-top: 10px; }
 .impact span { font: 500 .72rem/1 var(--mono); color: var(--muted); }
 @media (max-width: 560px) { ol.mistakes li { grid-template-columns: 2rem minmax(0, 1fr); }
   .impact { grid-column: 2; grid-row: auto; justify-items: start; } .impact .bar { width: 8rem; } }
@@ -575,6 +582,19 @@ def _objective_cards(m: Match, p, visits) -> str:
 
 
 # --------------------------------------------------------------------- page
+def _ranked(items, tone: str) -> str:
+    """Numbered cards with an impact bar: mistakes (red) or big plays (green)."""
+    top = max((f.impact for f in items), default=1) or 1
+    out = [f'<ol class="mistakes {tone}">']
+    for f in items:
+        out.append(f'<li><div class="m-title">{E(f.title)}</div>'
+                   f'<div class="impact"><div class="bar"><i style="width:{f.impact / top * 100:.0f}%"></i></div>'
+                   f'<span>{"impact" if tone == "bad" else "value"} {f.impact:.1f}</span></div>'
+                   + (f'<div class="m-detail">{E(f.detail.strip().rstrip(";").strip())}</div>' if f.detail.strip("; ") else "") + "</li>")
+    out.append("</ol>")
+    return "".join(out)
+
+
 def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int], extras: dict | None = None,
                 top_n: int = 8) -> str:
     extras = extras or {}
@@ -624,28 +644,26 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
              '<span><i style="background:var(--muted)"></i>even fight / ultimate on cooldown</span>'
              '<span><i style="background:var(--brass)"></i>ultimate cast</span></div></section>')
 
-    # mistakes + map
-    L.append('<section><div class="sec-head"><span class="eyebrow">Ranked by estimated cost to your team</span>'
-             '<h2>Biggest mistakes</h2></div><div class="two"><ol class="mistakes">')
-    for f in bad[:top_n]:
-        L.append(f'<li><div class="m-title">{E(f.title)}</div>'
-                 f'<div class="impact"><div class="bar"><i style="width:{f.impact / max_imp * 100:.0f}%"></i></div>'
-                 f'<span>impact {f.impact:.1f}</span></div>'
-                 + (f'<div class="m-detail">{E(f.detail)}</div>' if f.detail else "") + "</li>")
-    L.append("</ol>")
+    # map: its own row
     if m.replay_ok:
-        L.append('<div class="chart map">' + _map(m, p) + '<div class="legend" style="margin-top:8px">'
+        L.append('<section><div class="sec-head"><span class="eyebrow">Where it happened</span><h2>Map</h2>'
+                 '<p>Your deaths and kills, and every objective, on the game\'s minimap. Hover a mark for details.</p></div>'
+                 '<div class="chart map big">' + _map(m, p) + '<div class="legend">'
                  f'<span>{_key("death")}your deaths</span><span>{_key("kill")}your kills</span>'
                  f'<span>{_key("obj", _team_var(p.team))}your objectives</span>'
                  f'<span>{_key("obj", _team_var(1 - p.team))}enemy objectives</span>'
-                 f'<span>{_key("dead", "var(--muted)")}destroyed objective</span></div></div>')
-    L.append("</div>")
-    if len(bad) > top_n:
-        L.append(f'<p class="muted">{len(bad) - top_n} smaller issues are in the Markdown report.</p>')
-    if good:
-        L.append('<h3>What went well</h3><ul class="wins">'
-                 + "".join(f"<li><b>{E(f.title)}</b><span>{E(f.detail)}</span></li>" for f in good) + "</ul>")
-    L.append("</section>")
+                 f'<span>{_key("dead", "var(--muted)")}destroyed objective</span></div></div></section>')
+
+    # mistakes and big plays, side by side
+    plays = sorted(good, key=lambda f: -f.impact)
+    L.append('<section><div class="two ranked">'
+             '<div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated cost to your team</span>'
+             '<h2>Biggest mistakes</h2></div>' + _ranked(bad[:top_n], "bad")
+             + (f'<p class="muted note">{len(bad) - top_n} smaller issues are in the Markdown report.</p>' if len(bad) > top_n else "")
+             + '</div><div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated value to your team</span>'
+             '<h2>Big plays</h2></div>'
+             + (_ranked(plays[:top_n], "good") if plays else '<p class="muted">No standout plays found this game.</p>')
+             + '</div></div></section>')
 
     # comparison
     if base:

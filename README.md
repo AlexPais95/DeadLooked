@@ -11,7 +11,7 @@ pip install -r requirements.txt
 python -m deadlock_review 143558839 --hero Dynamo --html
 ```
 
-The report is written to `reports/<match_id>.md`. With `--html` you also get `reports/<match_id>.html`: a visual version with a match timeline (soul difference, fights, ultimate cooldowns, deaths, objectives), a map of your deaths, kills and objectives, ranked mistakes, comparison bars against top-tier players, and fight and objective tables. It is a single file with no scripts; open it in any browser.
+The report is written to `reports/<match_id>.md`. With `--html` you also get `reports/<match_id>.html`: a visual version with a match timeline (soul difference, fights, ultimate cooldowns, deaths, objectives), a map of your deaths, kills and objectives, ranked mistakes and big plays (ultimates that won exchanges, multi-kills, objectives taken with you there, standout fight damage), comparison bars against top-tier players, and fight and objective tables. It is a single file with no scripts; open it in any browser.
 
 | Option | Meaning |
 |---|---|
