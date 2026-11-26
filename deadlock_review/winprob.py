@@ -163,16 +163,17 @@ def _terms(t: float, x: list[float]) -> list[float]:
     return [1.0, tn, ld, ld * tn, ld * tn * tn, g, w, b, s, pt, al, al * tn]
 
 
-def fit(matches: list[dict], step: int = 20, ridge: float = 1.0) -> dict:
+def fit(matches: list[dict], step: int | None = None, ridge: float = 1.0) -> dict:
     """Logistic regression on game states sampled every 20 s (both teams of every match).
     Checked on held-out matches: Brier 0.176 (soul lead alone 0.181, coin flip 0.250)."""
+    step = step or max(20, 20 * (len(matches) // 5000))   # ~1M samples whatever the number of matches
     X, y = [], []
     for m in matches:
         for t in range(60, m["dur"], step):
             for team in (0, 1):
                 X.append(_terms(t, state(m, team, t)))
                 y.append(1.0 if m["win"] == team else 0.0)
-    X, y = np.array(X), np.array(y)
+    X, y = np.array(X, dtype=np.float64), np.array(y)
     beta = np.zeros(X.shape[1])
     for _ in range(40):  # Newton / IRLS with a little ridge
         pr = 1 / (1 + np.exp(-X @ beta))
