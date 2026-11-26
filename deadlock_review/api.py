@@ -52,7 +52,13 @@ class Api:
         if cp.exists() and (max_age is None or time.time() - cp.stat().st_mtime < max_age):
             return json.loads(cp.read_text())
         self._log(f"GET {path} {params or ''}")
-        r = self.session.get(BASE + path, params=params, timeout=180)
+        for attempt in range(4):
+            r = self.session.get(BASE + path, params=params, timeout=180)
+            if r.status_code not in (429, 503):
+                break
+            wait = min(int(r.headers.get("retry-after") or 60) + 5, 1800)
+            print(f"[api] {path}: API busy (HTTP {r.status_code}), retrying in {wait / 60:.0f} min", flush=True)
+            time.sleep(wait)
         if r.status_code != 200:
             raise ApiError(f"GET {path} -> HTTP {r.status_code}: {r.text[:300]}")
         data = r.json()
