@@ -62,7 +62,7 @@ def main(argv=None) -> int:
         extras["baseline_min_badge"] = a.min_badge
         for s, rows in extras["baseline"].items():
             for r in rows:
-                if r["better_than"] < 0.2 and r["n"] >= 15:
+                if r["better_than"] is not None and r["better_than"] < 0.2 and r["n"] >= 15:
                     p = m.players[s]
                     findings.append(Finding(s, p.team, 0, "below_baseline", 1.5,
                                             f"{r['label']}: {_fmt(r['you'])} - worse than {1 - r['better_than']:.0%} "

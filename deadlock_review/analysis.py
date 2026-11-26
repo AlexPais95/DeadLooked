@@ -326,6 +326,12 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         rows, team_rows = fight_damage(m, fights, eff)
         findings += fight_damage_findings(m, rows)
         extras["fight_damage"], extras["team_damage"] = rows, team_rows
+    extras["objectives"] = {}
+    if m.replay_ok:
+        from .rotations import needed_findings, objective_visits, rotation_findings
+        for p in m.players.values():
+            findings += rotation_findings(m, p) + needed_findings(m, p)
+        extras["objectives"] = {s: objective_visits(m, m.players[s]) for s in focus_slots}
     for s in focus_slots:
         p = m.players[s]
         ult, casts, ready = ult_windows(m, p)

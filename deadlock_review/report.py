@@ -6,6 +6,8 @@ from .analysis import Finding, Fight
 from .match import Match, fmt_t
 
 TEAM_NAMES = {0: "Hidden King (team 0)", 1: "Archmother (team 1)"}
+PERCENT_KEYS = {"isolated_death_share", "fight_presence", "needed_present", "needed_farming",
+                "objectives_defended", "objectives_taken_present", "lane_time_away"}
 
 
 def _team_label(m: Match, team: int, focus_team: int | None) -> str:
@@ -109,6 +111,29 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
                 w(f"| {fmt_t(t)} | {cd:.0f}s | {ready} | {', '.join(notes) or 'none'} |")
         w("")
 
+    # ----- rotations: objectives
+    for slot, visits in (extras.get("objectives") or {}).items():
+        if not visits:
+            continue
+        p = m.players[slot]
+        w(f"## Rotations - objectives ({p.hero})")
+        w("")
+        w("Every objective that fell, and whether you got within 40 m of it in the 15 s before.")
+        w("")
+        w("| Time | Objective | Lane | Your team | You | Teammates there |")
+        w("|---|---|---|---|---|---|")
+        for v in visits:
+            if not v.alive:
+                you = "dead"
+            elif v.there:
+                you = "**there**"
+            elif v.busy:
+                you = f"fighting elsewhere ({v.closest_m:.0f} m)"
+            else:
+                you = f"{v.closest_m:.0f} m away" + (" ⚠" if v.lost and v.closest_m > 100 else "")
+            w(f"| {fmt_t(v.t)} | {v.kind} | {v.lane} | {'lost it' if v.lost else 'took it'} | {you} | {v.allies_there} |")
+        w("")
+
     # ----- comparison with top-tier baselines
     for slot, brows in (extras.get("baseline") or {}).items():
         if not brows:
@@ -126,10 +151,14 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
         w("| Measure | You | Top tier: 25% / median / 75% | Better than |")
         w("|---|---|---|---|")
         for r in brows:
-            share = r["key"].endswith("share") or r["key"] == "fight_presence"
+            share = r["key"] in PERCENT_KEYS
             f = (lambda v: f"{v:.0%}") if share else (lambda v: f"{v:,.2f}" if abs(v) < 10 else f"{v:,.0f}")
-            flag = " ⚠" if r["better_than"] < 0.2 else (" ✅" if r["better_than"] >= 0.8 else "")
-            w(f"| {r['label']} | {f(r['you'])} | {f(r['p25'])} / {f(r['p50'])} / {f(r['p75'])} | {r['better_than']:.0%}{flag} |")
+            if r["better_than"] is None:
+                cell = f"style: higher than {r['pct']:.0%} of them"
+            else:
+                flag = " ⚠" if r["better_than"] < 0.2 else (" ✅" if r["better_than"] >= 0.8 else "")
+                cell = f"{r['better_than']:.0%}{flag}"
+            w(f"| {r['label']} | {f(r['you'])} | {f(r['p25'])} / {f(r['p50'])} / {f(r['p75'])} | {cell} |")
         w("")
 
     # ----- team fight damage

@@ -21,7 +21,7 @@ The report is written to `reports/<match_id>.md`.
 | `--min-badge N` | Rank used for benchmarks (default 90 = Phantom and above) |
 | `--out FILE` | Where to write the report |
 
-Each match costs **5 replay queries**. The API allows 200 per hour per IP, and results are
+Each match costs **6 replay queries**. The API allows 200 per hour per IP, and results are
 cached in `.cache/`, so re-running a report is free.
 
 ## What it checks (v0.1)
@@ -37,6 +37,11 @@ cached in `.cache/`, so re-running a report is free.
 - Ultimate quality: enemies caught, allies close enough to follow up, kills and losses in the next 15 s
 - **Team fight damage:** damage to enemy heroes in each fight compared with an *expected* share, so players are judged against teammates in the same fight. The expected share uses the hero's role (damage per soul for that hero across recent matches), souls at the time, and seconds the player was actually in the fight (alive, and within 60 m or trading damage). Under 50% is flagged, 160%+ is highlighted, and short appearances aren't judged
 - **Ultimate timeline:** cooldown after each cast from the ultimate's upgrades owned at the time and cooldown items (Compress Cooldown only if imbued into the ultimate), with Refresher resets
+- **Rotations:**
+  - *Being where you're needed:* every 5 s after 10:00, finds where your team needed help (a teammate trading damage with enemy heroes within 30 m, or 2+ enemies at one of your objectives) and whether you were there (within 60 m), fighting somewhere else, or farming 100 m+ away. Farming stretches that cost a teammate's life or an objective are flagged
+  - *Objectives:* for every objective that fell (positions from the replay's `BossKilledEvent`), whether you got within 40 m in the 15 s before; own objectives lost while you were alive, 100 m+ away and not fighting are flagged
+  - *Fight arrival:* seconds after a fight's first death before you reached it
+  - *Laning phase:* kills you were in on in other lanes before 10:00 (ganks), and time spent outside your lane; lanes are the three columns of the map at x = -7500 / 0 / +7500
 - 3+ deaths before 10:00
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
 
@@ -63,7 +68,10 @@ table and flag measures where you did worse than 80% of top-tier games (once at 
 Measures: deaths per 10 min, share of deaths with no ally within 30 m, team fights
 attended, fight damage vs expected, ultimates per 10 min, enemies caught and allies close
 per ultimate, seconds the ultimate sat ready, distance to the nearest ally, souls per
-minute at 10 and 20 min, and deaths before 10:00.
+minute at 10 and 20 min, deaths before 10:00, and the rotation measures above. Lane changes
+and time out of lane are *style* measures: shown next to top-tier players but never flagged.
+After adding measures, `python -m deadlock_review.collect --recompute` re-runs them on every
+collected match (cached queries are free).
 
 ## How it works
 

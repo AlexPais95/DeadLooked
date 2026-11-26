@@ -13,6 +13,7 @@ from .analysis import (ISOLATED_M, _killer_ult, _present_seconds, find_fights, f
                        hero_efficiency, ult_windows)
 from .heroes import cfg
 from .match import Match, Player, dist_m
+from .rotations import needed_metrics, rotation_metrics
 
 # name -> (label, higher_is_better)
 METRICS = {
@@ -28,6 +29,15 @@ METRICS = {
     "souls_per_min_10": ("Souls per minute at 10:00", True),
     "souls_per_min_20": ("Souls per minute at 20:00", True),
     "lane_deaths": ("Deaths before 10:00", False),
+    # rotations (None = style measure: shown for comparison, never flagged)
+    "needed_present": ("Where you were needed: at the fight/objective", True),
+    "needed_farming": ("Where you were needed: farming 100 m+ away", False),
+    "fight_arrival_s": ("Seconds late to fights (median)", False),
+    "objectives_defended": ("Own objectives lost: you were there", True),
+    "objectives_taken_present": ("Enemy objectives taken: you were there", True),
+    "lane_ganks": ("Kills in other lanes before 10:00", True),
+    "lane_time_away": ("Laning phase spent outside your lane", None),
+    "lane_changes_per10": ("Lane changes per 10 min after 10:00", None),
 }
 
 
@@ -95,6 +105,8 @@ def player_metrics(m: Match, p: Player, fights=None, damage_rows=None) -> dict:
         if ds:
             dists.append(min(ds))
     out["ally_distance_m"] = _median(dists)
+    out.update(rotation_metrics(m, p, fights))
+    out.update(needed_metrics(m, p))
     return out
 
 
@@ -137,7 +149,7 @@ def compare_to_baseline(m: Match, p: Player, summary: dict, fights=None, damage_
         below = sum(1 for x in vals if x < v)
         equal = sum(1 for x in vals if x == v)
         pct = (below + equal / 2) / len(vals)
-        better_than = pct if higher_better else 1 - pct
+        better_than = None if higher_better is None else (pct if higher_better else 1 - pct)
         out.append({"key": key, "label": label, "you": v, "p25": b["p25"], "p50": b["p50"], "p75": b["p75"],
-                    "n": b["n"], "better_than": better_than})
+                    "n": b["n"], "better_than": better_than, "pct": pct})
     return out

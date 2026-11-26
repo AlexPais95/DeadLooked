@@ -36,6 +36,26 @@ SQL_POSITIONS = (
 )
 
 
+SQL_BOSSES = "SELECT tick, objective_team, entity_killed_class, entity_position FROM BossKilledEvent ORDER BY tick"
+
+# BossKilledEvent.entity_killed_class -> objective name
+BOSS_KINDS = {5: "Guardian", 29: "Walker", 30: "Base Guardian", 28: "Shrine", 31: "Patron"}
+LANES = {-1: "left lane", 0: "middle lane", 1: "right lane"}  # lanes run along y at x = -7500 / 0 / +7500
+LANE_SPACING = 7500
+
+
+def lane_of(x: float) -> int:
+    return max(-1, min(1, round(x / LANE_SPACING)))
+
+
+@dataclass
+class ObjectiveKill:
+    t: float
+    team: int          # team that owned (lost) the objective
+    kind: str
+    pos: tuple[float, float]
+
+
 def world_xy(cx, cy, vx, vy) -> tuple[float, float]:
     return cx * 512 - 32768 + vx, cy * 512 - 32768 + vy
 
@@ -142,6 +162,7 @@ class Match:
         )
         self.replay_ok = False
         self.replay_error: str | None = None
+        self.objective_kills: list[ObjectiveKill] = []
         if use_replay:
             try:
                 self._load_replay()
@@ -244,6 +265,15 @@ class Match:
                 t = int(round(self.tick_to_t(r["sec"] * TICKS_PER_SEC + TICKS_PER_SEC // 2)))
                 dmg = self.players[att].damage_out
                 dmg[t] = dmg.get(t, 0) + (r["dmg"] or 0)
+
+        # objective kills with positions (objective_team uses Source numbering: 2 = team 0, 3 = team 1)
+        for r in self.api.demo_query(mid, SQL_BOSSES, "bosses"):
+            kind = BOSS_KINDS.get(r["entity_killed_class"])
+            if kind is None or r["objective_team"] not in (2, 3):
+                continue
+            pos = r["entity_position"]
+            self.objective_kills.append(
+                ObjectiveKill(self.tick_to_t(r["tick"]), r["objective_team"] - 2, kind, (pos["x"], pos["y"])))
 
         # casts: attribute caster ids to heroes via the ability's owner
         caster_to_slot: dict[int, int] = {}

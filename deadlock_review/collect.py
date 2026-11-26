@@ -26,7 +26,7 @@ from .metrics import METRICS, match_metrics
 BASE_DIR = Path("baselines")
 RAW = BASE_DIR / "raw.jsonl"
 SUMMARY = BASE_DIR / "summary.json"
-QUERIES_PER_MATCH = 5
+QUERIES_PER_MATCH = 6
 
 
 class Throttle:
@@ -103,6 +103,32 @@ def collect(api: Api, heroes: list[str], per_hero: int, min_badge: int, days: in
     summarize()
 
 
+def recompute(api: Api, per_hour: int) -> None:
+    """Re-run the metrics on every collected match (after adding new measures).
+    Cached replay queries are free; only new queries count against the budget."""
+    rows = [json.loads(line) for line in RAW.read_text().splitlines() if line]
+    ids = list(dict.fromkeys(r["match_id"] for r in rows))
+    throttle = Throttle(api, per_hour)
+    out: dict[int, list[dict]] = {}
+    for i, mid in enumerate(ids, 1):
+        throttle.wait_for(QUERIES_PER_MATCH)
+        m = Match(api, mid)
+        if not m.replay_ok:
+            print(f"[collect] {mid}: replay failed ({m.replay_error}), keeping old rows", flush=True)
+            out[mid] = [r for r in rows if r["match_id"] == mid]
+            continue
+        out[mid] = match_metrics(m)
+        print(f"[collect] recomputed {i}/{len(ids)} (match {mid})", flush=True)
+        tmp = RAW.with_suffix(".tmp")
+        done = set(out)
+        with tmp.open("w") as fh:
+            for mid2 in ids:
+                for r in (out[mid2] if mid2 in done else [r for r in rows if r["match_id"] == mid2]):
+                    fh.write(json.dumps(r) + "\n")
+        tmp.replace(RAW)
+    summarize()
+
+
 def _pct(xs: list[float], q: float) -> float:
     xs = sorted(xs)
     if not xs:
@@ -141,10 +167,14 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=7, help="only matches this recent (replays expire)")
     ap.add_argument("--per-hour", type=int, default=150, help="replay queries per hour (API limit is 200)")
     ap.add_argument("--summarize", action="store_true", help="only rebuild summary.json")
+    ap.add_argument("--recompute", action="store_true", help="re-run metrics on all collected matches")
     ap.add_argument("--cache", default=".cache")
     a = ap.parse_args(argv)
     if a.summarize:
         summarize()
+        return 0
+    if a.recompute:
+        recompute(Api(a.cache, verbose=False), a.per_hour)
         return 0
     collect(Api(a.cache), [h.strip() for h in a.heroes.split(",")], a.matches, a.min_badge, a.days, a.per_hour)
     return 0
