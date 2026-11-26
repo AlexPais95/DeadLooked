@@ -154,6 +154,22 @@ strength 0.1713; + per-hero soul values 0.1710. Both help, so the report's win c
 Victor, Vindicta, Pocket and Kelvin and about 0.5-0.7x on The Doorman, Dynamo, Abrams and Apollo, whose
 power comes more from abilities than from items.
 
+## Role-aware rotation checks
+
+```bash
+python -m deadlock_review.expectations
+```
+
+Carries spend the early and mid game farming side lanes, so a missed fight or a lost objective isn't
+the same mistake for every hero. From the 110 collected top-tier replays, by role and hero in 5-minute
+windows: how often players join team fights (when alive), and how often they are farming 100 m+ away
+when a teammate needs help. For example, at 10-15 min top carries join 80% of team fights (supports
+90%) and are farming away in 51% of "teammate needs help" moments (supports 40%); after 25 min every
+role joins almost every fight. "Not in the fight", "farming while your team needed you" and "your
+objective fell while you were far away" are weighted by that (hero rate, pulled towards the role
+when the hero has few samples), and farming moments are dropped when most top players in your role
+would also have been farming and no objective fell.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).

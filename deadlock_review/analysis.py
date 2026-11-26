@@ -36,6 +36,7 @@ class Finding:
     wpa: float | None = None   # change in your team's win chance (-1..1), from wpa.py
     wpa_how: str = ""
     context_only: bool = False   # its win-chance number is an estimate; the real swing is shown as context
+    expect: float | None = None  # how often a top-tier player in your role would have been there (0..1)
 
 
 def rank_key(f: "Finding") -> float:
@@ -397,12 +398,20 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 lost = f.winner is not None and f.winner != p.team
                 ult_up = ult_logged and _ready_at(ready, f.start)
                 if dmin > ABSENT_M:
-                    impact = 1.5 + (1.5 if lost else 0) + (2.0 if ult_up else 0)
+                    from .counters import hero_roles
+                    from .expectations import expected_presence
+                    role = hero_roles(m.api).get(p.hero_id, ("Core", ""))[0]
+                    exp = expected_presence(p.hero_id, role, f.deaths[0][0])
+                    pres = exp[0] if exp else 1.0
+                    impact = (1.5 + (1.5 if lost else 0) + (2.0 if ult_up else 0)) * pres
                     title = f"Not in the fight at {fmt_t(f.end)} (closest {dmin:.0f} m)" + (
                         " with ultimate ready" if ult_up else "")
                     res = "your team lost it" if lost else ("your team won it" if f.winner == p.team else "even trade")
+                    norm = (f"top-tier {{"Carry": "carries", "Frontliner": "frontliners", "Support": "supports"}.get(role, role.lower() + "s")} join {pres:.0%} of fights at this stage, so it counts {pres:.0%}"
+                            if exp else "")
                     findings.append(Finding(p.slot, p.team, f.end, "absent_fight", impact, title,
-                                            f"{res}; " + (tips.get("ult_held", "") if ult_up else "")))
+                                            "; ".join(x for x in (res, norm, tips.get("ult_held", "") if ult_up else "") if x),
+                                            expect=pres))
                 elif ult_up and not any(f.start - 5 <= t <= f.end + 5 for t in casts) and c["ult_kind"] == "aoe":
                     findings.append(Finding(p.slot, p.team, f.end, "ult_unused_fight", 2.0 if lost else 1.0,
                                             f"In the fight at {fmt_t(f.end)} but didn't use your ultimate",

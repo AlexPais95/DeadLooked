@@ -232,13 +232,17 @@ def apply(m: Match, fights, findings, focus_slots) -> MatchWP | None:
             if key:
                 take([key], f)
                 val, how = c.for_team(key, team), "the objective: " + c.context(key, team)
+                if kind == "missed_defense" and f.expect is not None:
+                    val *= f.expect
+                    how += f", times {f.expect:.0%} (how often top players in your role are near the action then)"
         elif kind == "absent_fight":
             fight = fight_at(t)
             if fight:
                 sw = w.swing(team, fight.deaths[0][0] - 5, fight.end + 10)
                 missing = max(1, sum(1 for q in m.team(team) if not _was_in(m, q, fight)))
-                val = min(0.0, sw) / missing
-                how = f"the fight swung your team's win chance {100 * sw:+.1f}%, shared between the {missing} who weren't there"
+                val = min(0.0, sw) / missing * (f.expect if f.expect is not None else 1.0)
+                how = (f"the fight swung your team's win chance {100 * sw:+.1f}%, shared between the {missing} who weren't there"
+                       + (f", times {f.expect:.0%} (how often top players in your role join fights then)" if f.expect is not None else ""))
         elif kind in ("high_fight_damage", "low_fight_damage"):
             fight = fight_at(t)
             if fight:
