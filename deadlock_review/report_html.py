@@ -144,7 +144,7 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .fsum b { font: 600 1.8rem/1 var(--mono); } .fsum b small { font-size: 1.1rem; color: var(--muted); }
 .fsum span { font: 500 .7rem/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .fights { display: grid; gap: 6px; }
-.fight { display: grid; grid-template-columns: 5.5rem 8.5rem minmax(0, 1fr) 11rem; gap: 6px 18px; align-items: center;
+.fight { display: grid; grid-template-columns: 5.5rem minmax(0, 1.25fr) minmax(0, 1fr) 10rem; gap: 6px 18px; align-items: center;
   background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 6px; padding: 10px 14px; }
 .fight.won { border-left-color: var(--good); } .fight.lost { border-left-color: var(--bad); }
 .f-when { display: grid; gap: 4px; } .f-when b { font-size: 1.05rem; }
@@ -170,7 +170,7 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .rate.none { color: var(--muted); font-style: italic; }
 .you-sub { font-size: .72rem; }
 @media (max-width: 720px) { .fight { grid-template-columns: 4.5rem minmax(0, 1fr); }
-  .fight .pips { grid-column: 2; grid-row: 1; justify-self: end; } .f-bar { grid-column: 1 / -1; } .f-you { grid-column: 1 / -1; } }
+  .f-faces { grid-column: 2; grid-row: 1; } .f-bar { grid-column: 1 / -1; } .f-you { grid-column: 1 / -1; } }
 
 /* objectives */
 .objs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
@@ -219,6 +219,9 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .face.mini.me i { box-shadow: 0 0 0 2px var(--c), 0 0 0 4px var(--brass); }
 .face.mini.dead::after { width: 11px; height: 11px; right: -4px; bottom: -4px; background-size: 7px; border-width: 1.5px; }
 .faces-key { margin-top: 4px; }
+.f-faces .faces { grid-column: auto; margin: 0; }
+.f-faces .face { width: 26px; height: 26px; }
+.f-faces .side { gap: 6px; }
 .obj .faces { grid-column: auto; margin: 6px 0 4px; }
 .obj .faces .side { gap: 6px; }
 .obj .face { width: 26px; height: 26px; }
@@ -594,10 +597,14 @@ def _fights(m: Match, p, fights, extras) -> str:
             rc = "low" if r.ratio < 0.5 else ("high" if r.ratio >= 1.6 else "ok")
             you_html = (f'<span class="rate {rc}"><b class="num">{r.ratio:.0%}</b> of expected</span>'
                         f'<span class="muted num you-sub">{r.damage:,} dmg · {r.present_s}s in fight</span>')
-        pips = ('<span class="pips" title="Enemies killed / your team\'s deaths">'
-                + "".join(f'<i style="background:{them_col}"></i>' for _ in range(k))
-                + '<em class="num">' + f"{k}–{d}" + "</em>"
-                + "".join(f'<i style="background:{me_col}"></i>' for _ in range(d)) + "</span>")
+        # who was in the fight (time in it, damage, or died in it), dead ones marked
+        died = {x[1].slot for x in f.deaths}
+        in_fight = {rr.player.slot for rr in rows if rr.fight is f and (rr.present_s > 0 or rr.damage > 0)} | died
+        people = [(q.hero, q.team, q.slot in died, q.slot == p.slot)
+                  for q in sorted(m.players.values(), key=lambda q: (q.slot not in died, -q.net_worth))
+                  if q.slot in in_fight]
+        pips = (f'<div class="f-faces" title="{k} enemies killed, {d} of your team died">'
+                + _faces(people, p.team) + "</div>")
         wpm = extras.get("wp")
         sw = wpm.swing(p.team, f.deaths[0][0] - 5, f.end + 10) if wpm else None
         swing = (f'<span class="swing {"up" if sw > 0 else "down"}" title="Change in your team\'s chance of winning from just before '
@@ -611,7 +618,7 @@ def _fights(m: Match, p, fights, extras) -> str:
     out.append('</div><div class="legend"><span><i style="background:var(--fg)"></i>your own damage</span>'
                f'<span><i style="background:{me_col}"></i>your team</span><span><i style="background:{them_col}"></i>enemy team</span>'
                '<span><i style="background:var(--warn)"></i>tick: your team\'s share of souls (even fight = damage meets the tick)</span>'
-               '<span>dots: enemies killed – your team\'s deaths</span></div>')
+               '<span>faces: everyone in the fight; greyed with a red cross = died in it</span></div>')
     return "".join(out)
 
 
