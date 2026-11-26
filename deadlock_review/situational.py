@@ -89,23 +89,34 @@ def build(cache: str = ".cache", store_name: str = "winprob_matches_v3.jsonl") -
 _CACHE = None
 
 
-MIN_HERO_N = 800
+PRIOR_N = 1000   # hero data counts as much as all-hero data once the hero has this many purchases
 
 
 def value(group: str, item_id: int | str, first: bool, hero_id: int | None = None):
-    """(wins above expected, margin, n, for this hero?) for this item in this situation, or None.
-    Uses purchases by your hero when there are enough (an item can work very differently per hero:
-    Silencer on Haze is +2.7 as the team's first crowd control, about 0 averaged over all heroes)."""
+    """(wins above expected, margin, purchases by your hero, share of the number from your hero).
+
+    Blends your hero's purchases with all heroes' (empirical Bayes): weight = n / (n + 1000).
+    So 237 Haze purchases count for 19%, 6,602 for 87%: an item can work very differently per hero
+    (Silencer as the team's first silence: Haze +2.2, Wraith +3.2, all heroes +0.2), but a few hundred
+    games are too noisy to stand alone."""
     global _CACHE
     if _CACHE is None:
         _CACHE = json.loads(OUT.read_text()) if OUT.exists() else {}
     key = "first" if first else "dup"
+    base = ((_CACHE.get("groups", {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
+    hero = None
     if hero_id is not None:
-        row = (((_CACHE.get("by_hero", {}).get(str(hero_id), {}) or {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
-        if row and row["n"] >= MIN_HERO_N:
-            return row["above"], row["margin"], row["n"], True
-    row = ((_CACHE.get("groups", {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
-    return (row["above"], row["margin"], row["n"], False) if row else None
+        hero = (((_CACHE.get("by_hero", {}).get(str(hero_id), {}) or {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
+    if not base and not hero:
+        return None
+    if not hero:
+        return base["above"], base["margin"], 0, 0.0
+    if not base:
+        return hero["above"], hero["margin"], hero["n"], 1.0
+    w = hero["n"] / (hero["n"] + PRIOR_N)
+    est = w * hero["above"] + (1 - w) * base["above"]
+    margin = ((w * hero["margin"]) ** 2 + ((1 - w) * base["margin"]) ** 2) ** 0.5 + (1 - w) * abs(hero["above"] - base["above"]) * 0.5
+    return est, margin, hero["n"], w
 
 
 def main(argv=None) -> int:

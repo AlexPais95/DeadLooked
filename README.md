@@ -191,7 +191,9 @@ buyer's team beat its win chance at the moment of purchase? Wins per 100 above e
 | Spirit resist (your own) | +1.3 | +0.8 |
 
 A second crowd-control item on the same team is clearly worse; anti-heal and shred still help when
-stacked. The situational-buys cards show each item's number for your situation (first on your team,
+stacked. Values are also kept per hero and blended with the all-hero numbers by how many purchases the
+hero has (weight n / (n + 1000)): Silencer as the team's first silence is +2.2 on Haze and +3.2 on
+Wraith but +0.2 over all heroes; Enchanter's Emblem as a first resist item is +6.4 on Haze. The situational-buys cards show each item's number for your situation (first on your team,
 already covered, or your first resist item). Limit: the data knows who bought what, not whether the
 enemy needed countering.
 
