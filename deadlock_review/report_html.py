@@ -142,13 +142,13 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .pips i { width: 8px; height: 8px; border-radius: 50%; }
 .pips em { font-style: normal; font-size: .82rem; color: var(--fg); margin: 0 6px; }
 .f-bar { min-width: 0; display: grid; gap: 3px; }
-.tug { position: relative; height: 12px; border-radius: 6px; overflow: hidden; background: var(--raise); }
+.tug { position: relative; height: 14px; border-radius: 6px; overflow: hidden; background: var(--raise); }
 .tug i { position: absolute; top: 0; bottom: 0; }
 .tug .ours { left: 0; opacity: .85; } .tug .theirs { opacity: .55; }
-.tug .you { left: 0; z-index: 1; background: repeating-linear-gradient(135deg, var(--fg) 0 2px, transparent 2px 5px);
-  box-shadow: inset 0 0 0 1.5px var(--fg); border-radius: 6px 0 0 6px; }
-.legend i.hatch { background: repeating-linear-gradient(135deg, var(--fg) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--fg); }
-.tug .souls { width: 2px; margin-left: -1px; background: var(--fg); z-index: 2; }
+.tug .you { left: 0; z-index: 1; background: var(--fg); border-right: 2px solid var(--surface); }
+.you-lab { color: var(--fg); font-weight: 600; }
+.note { font-size: .85rem; }
+.tug .souls { width: 3px; margin-left: -1.5px; background: var(--warn); z-index: 2; }
 .tug-lab { display: flex; justify-content: space-between; font: .7rem var(--mono); color: var(--muted); }
 .f-you { display: grid; gap: 2px; justify-items: start; }
 .rate { font-size: .85rem; } .rate b { font-size: 1rem; }
@@ -157,6 +157,27 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .you-sub { font-size: .72rem; }
 @media (max-width: 720px) { .fight { grid-template-columns: 4.5rem minmax(0, 1fr); }
   .fight .pips { grid-column: 2; grid-row: 1; justify-self: end; } .f-bar { grid-column: 1 / -1; } .f-you { grid-column: 1 / -1; } }
+
+/* objectives */
+.objs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.obj { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.badge { width: 64px; height: 64px; border-radius: 8px; border: 2px solid; display: grid; place-items: center;
+  background: var(--raise); overflow: hidden; }
+.badge svg { width: 54px; height: 54px; }
+.badge.patron img { width: 100%; height: 100%; object-fit: cover; }
+.obj-body { display: grid; gap: 4px; min-width: 0; }
+.obj-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.obj-head h3 { font-size: 1.15rem; }
+.obj-meta { font-size: .75rem; color: var(--muted); letter-spacing: .04em; }
+.obj-story { font-size: .88rem; line-height: 1.45; }
+.obj-you { display: flex; align-items: center; gap: 8px; font-size: .84rem; font-weight: 600; margin-top: 2px; }
+.obj-you i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.obj.good .obj-you { color: var(--good); } .obj.good .obj-you i { background: var(--good); }
+.obj.bad .obj-you { color: var(--bad); } .obj.bad .obj-you i { background: var(--bad); }
+.obj.warn .obj-you { color: var(--warn); } .obj.warn .obj-you i { background: var(--warn); }
+.obj.mid .obj-you { color: var(--muted); }
+.obj.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
 
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
@@ -368,7 +389,14 @@ def _fights(m: Match, p, fights, extras) -> str:
     team's damage (your own part highlighted, souls share marked) and your rating."""
     rows = extras.get("fight_damage") or []
     team_dmg = {(id(ff), team): (dmg, share) for ff, team, dmg, share in (extras.get("team_damage") or [])}
+    from .rotations import in_scope
     me_by_fight = {id(r.fight): r for r in rows if r.player.slot == p.slot}
+
+    def counts(f):  # other-lane laning fights count only if you joined them
+        r = me_by_fight.get(id(f))
+        return in_scope(p, f.deaths[0][0], f.center[0]) or (r is not None and (r.present_s > 0 or r.damage > 0))
+    hidden = [f for f in fights if not counts(f)]
+    fights = [f for f in fights if counts(f)]
     won = sum(1 for f in fights if f.winner == p.team)
     lost = sum(1 for f in fights if f.winner is not None and f.winner != p.team)
     attended = [r for r in me_by_fight.values() if r.present_s > 0 or r.damage > 0]
@@ -396,10 +424,12 @@ def _fights(m: Match, p, fights, extras) -> str:
             bar = (f'<div class="tug" title="Your team {mine_t[0]:,} damage ({ours:.0f}%), enemy {theirs_t[0]:,}. '
                    f'Your team had {souls:.0f}% of the souls.">'
                    f'<i class="ours" style="width:{ours:.1f}%;background:{me_col}"></i>'
-                   f'<i class="you" style="width:{you:.1f}%"></i>'
-                   f'<i class="theirs" style="left:{ours:.1f}%;width:{100 - ours:.1f}%;background:{them_col}"></i>'
+                   + (f'<i class="you" style="width:{you:.1f}%"></i>' if you > 0 else "")
+                   + f'<i class="theirs" style="left:{ours:.1f}%;width:{100 - ours:.1f}%;background:{them_col}"></i>'
                    f'<i class="souls" style="left:{souls:.1f}%"></i></div>'
-                   f'<div class="tug-lab"><span>{ours:.0f}% of damage</span><span>{100 - ours:.0f}%</span></div>')
+                   f'<div class="tug-lab"><span>Your team {ours:.0f}%'
+                   + (f' · <b class="you-lab">you {you:.0f}%</b>' if r and r.damage else "")
+                   + f'</span><span>enemy {100 - ours:.0f}%</span></div>')
         else:
             bar = '<div class="tug empty"></div><div class="tug-lab"><span class="muted">no damage data</span></div>'
         # you
@@ -418,33 +448,102 @@ def _fights(m: Match, p, fights, extras) -> str:
         out.append(f'<div class="fight {cls}"><div class="f-when"><b class="num">{fmt_t(f.deaths[0][0])}</b>'
                    f'<span class="res {cls}">{res}</span></div>{pips}<div class="f-bar">{bar}</div>'
                    f'<div class="f-you">{you_html}</div></div>')
-    out.append('</div><div class="legend"><span><i class="hatch"></i>your own damage (inside your team&#39;s bar)</span>'
+    if hidden:
+        out.append(f'<p class="muted note">{len(hidden)} early fight(s) in other lanes before 10:00 that you weren\'t in are left out: '
+                   'during the laning phase only your own lane counts.</p>')
+    out.append('</div><div class="legend"><span><i style="background:var(--fg)"></i>your own damage</span>'
                f'<span><i style="background:{me_col}"></i>your team</span><span><i style="background:{them_col}"></i>enemy team</span>'
-               '<span><i style="background:var(--fg)"></i>tick: your team\'s share of souls (even fight = damage meets the tick)</span>'
+               '<span><i style="background:var(--warn)"></i>tick: your team\'s share of souls (even fight = damage meets the tick)</span>'
                '<span>dots: enemies killed – your team\'s deaths</span></div>')
     return "".join(out)
 
 
-def _objectives_table(visits) -> str:
-    out = ['<div class="tbl"><table><thead><tr><th>Time</th><th>Objective</th><th>Where</th><th>Your team</th>'
-           '<th>You</th><th class="num">Teammates there</th></tr></thead><tbody>']
-    for v in visits:
+NUMERALS = {"Guardian": "I", "Walker": "II", "Base Guardian": "III", "Shrine": "IV"}
+
+
+def _join(names) -> str:
+    names = list(names)
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _badge(m: Match, kind: str, owner: int) -> str:
+    """Patron: the team's mask from the assets API. Other objectives: a tier badge in the team colour."""
+    import base64
+    col = _team_var(owner)
+    if kind == "Patron":
+        try:
+            got = m.api.patron_image(owner)
+        except Exception:
+            got = None
+        if got:
+            data, mime = got
+            return (f'<div class="badge patron" style="border-color:{col}">'
+                    f'<img src="data:{mime};base64,{base64.b64encode(data).decode()}" alt="{E(TEAM_NAMES.get(owner, "").split(" (")[0])} Patron"></div>')
+    num = NUMERALS.get(kind, "?")
+    return (f'<div class="badge" style="border-color:{col}"><svg viewBox="0 0 64 64" aria-hidden="true">'
+            f'<path d="M32 4 L56 14 V34 C56 47 45 56 32 60 C19 56 8 47 8 34 V14 Z" fill="{col}" fill-opacity=".18" stroke="{col}" stroke-width="2.5"/>'
+            f'<text x="32" y="41" text-anchor="middle" style="fill:{col};font:800 22px var(--display)">{num}</text></svg></div>')
+
+
+def _objective_story(v, p) -> str:
+    if v.lost:
+        who = _join(v.enemies) or "The enemy"
+        line = f"{who} took it" + (f" against {_join(v.allies)}" if v.allies else ", with nobody defending") + "."
+    else:
+        team = list(v.allies) + ([p.hero] if v.there else [])
+        line = f"{_join(team) or 'Your team'} took it" + (f" against {_join(v.enemies)}" if v.enemies else ", unopposed") + "."
+    if v.deaths:
+        mine = [h for h, t in v.deaths if t == p.team]
+        theirs = [h for h, t in v.deaths if t != p.team]
+        bits = []
+        if theirs:
+            bits.append(f"{_join(theirs)} died")
+        if mine:
+            bits.append(f"we lost {_join(mine)}")
+        text = "; ".join(bits)
+        line += " " + text[0].upper() + text[1:] + " there."
+    return E(line)
+
+
+def _objective_cards(m: Match, p, visits) -> str:
+    shown = [v for v in visits if v.in_scope]
+    hidden = len(visits) - len(shown)
+    lost = [v for v in shown if v.lost and v.alive and v.kind != "Patron"]
+    defended = sum(1 for v in lost if v.there)
+    far = sum(1 for v in lost if not v.there and not v.busy and (v.closest_m or 0) > 100)
+    taken = [v for v in shown if not v.lost and v.alive and v.kind != "Patron"]
+    out = ['<div class="fsum">',
+           f'<div><b class="num">{defended}<small>/{len(lost)}</small></b><span>Lost objectives you were at</span></div>',
+           f'<div><b class="num">{sum(1 for v in taken if v.there)}<small>/{len(taken)}</small></b><span>Taken objectives you were at</span></div>',
+           f'<div><b class="num" style="color:var(--bad)">{far}</b><span>Lost while you were far and not fighting</span></div>',
+           '</div><div class="objs">']
+    for v in shown:
+        owner = p.team if v.lost else 1 - p.team
         if not v.alive:
-            you = '<span class="pill mid">dead</span>'
+            st, sc = "You were dead", "mid"
         elif v.closest_m is None:
-            you = '<span class="muted">no data</span>'
+            st, sc = "No position data for you", "mid"
         elif v.there:
-            you = '<span class="pill good">there</span>'
+            st, sc = "You were there", "good"
         elif v.busy:
-            you = f'<span class="pill warn">fighting elsewhere</span> <span class="muted num">{v.closest_m:.0f} m</span>'
+            st, sc = f"You were fighting {v.closest_m:.0f} m away", "warn"
         elif v.lost and v.closest_m > 100:
-            you = f'<span class="pill bad">{v.closest_m:.0f} m away</span>'
+            st, sc = f"You were {v.closest_m:.0f} m away, not fighting", "bad"
         else:
-            you = f'<span class="muted num">{v.closest_m:.0f} m away</span>'
-        team = '<span class="pill bad">lost</span>' if v.lost else '<span class="pill good">took</span>'
-        out.append(f'<tr><td class="num">{fmt_t(v.t)}</td><td>{v.kind}</td><td>{v.lane}</td><td>{team}</td>'
-                   f'<td>{you}</td><td class="num">{v.allies_there}</td></tr>')
-    out.append("</tbody></table></div>")
+            st, sc = f"You were {v.closest_m:.0f} m away", "mid"
+        chip = '<span class="pill bad">Lost</span>' if v.lost else '<span class="pill good">Taken</span>'
+        where = "base" if v.lane == "base" else v.lane
+        out.append(f'<article class="obj {sc}">{_badge(m, v.kind, owner)}<div class="obj-body">'
+                   f'<div class="obj-head"><h3>{E(v.kind)}</h3>{chip}</div>'
+                   f'<div class="obj-meta num">{fmt_t(v.t)} · {E(where)}</div>'
+                   f'<p class="obj-story">{_objective_story(v, p)}</p>'
+                   f'<div class="obj-you"><i></i>{E(st)}</div></div></article>')
+    out.append("</div>")
+    if hidden:
+        out.append(f'<p class="muted note">{hidden} objective(s) in other lanes before 10:00 are left out: '
+                   'during the laning phase only your own lane counts.</p>')
     return "".join(out)
 
 
@@ -536,9 +635,9 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     visits = (extras.get("objectives") or {}).get(p.slot)
     if visits:
         L.append('<section><div class="sec-head"><span class="eyebrow">Rotations</span><h2>Objectives</h2>'
-                 '<p>Every objective that fell and whether you got within 40 m of it in the 15 seconds before. '
-                 'Red distances are your objectives lost while you were alive, far away and not fighting.</p></div>'
-                 + _objectives_table(visits) + "</section>")
+                 '<p>Every objective that fell, who fought over it, and where you were in the 15 seconds before '
+                 '("there" = within 40 m).</p></div>'
+                 + _objective_cards(m, p, visits) + "</section>")
 
     # other players
     L.append('<section><div class="sec-head"><span class="eyebrow">Everyone else</span><h2>Other players</h2></div><div>')

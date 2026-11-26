@@ -45,6 +45,7 @@ cached in `.cache/`, so re-running a report is free.
   - *Fight arrival:* for fights you had to travel to (60 m+ away 10 s before the first death), seconds until you got there
   - *Laning phase:* kills you were in on in other lanes before 10:00 (ganks), and time spent outside your lane; lanes are the three columns of the map at x = -7500 / 0 / +7500
 - 3+ deaths before 10:00
+- **Laning phase:** before 10:00 only your own lane counts. Fights and objectives in other lanes aren't held against you (missing them, defending them), unless you joined the fight
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
 
 Findings are ranked by an **impact** score: a hand-made estimate of how much the mistake

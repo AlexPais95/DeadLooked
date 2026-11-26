@@ -117,6 +117,21 @@ class Api:
             cp.write_bytes(r.content)
         return float(info["radius"]), cp.read_bytes()
 
+    def patron_image(self, team: int) -> tuple[bytes, str] | None:
+        """(image bytes, mime type) of a team's Patron mask: team 0 Hidden King, team 1 Archmother."""
+        want = "npc_boss_tier3" if team == 0 else "alt_npc_boss_tier3"
+        units = self._get_json("/v1/assets/npc-units", max_age=30 * DAY)
+        unit = next((u for u in units if u.get("class_name") == want), None)
+        url = unit and (unit.get("image_webp") or unit.get("image"))
+        if not url:
+            return None
+        cp = self._cache_path("img:" + url, ".img")
+        if not cp.exists():
+            r = self.session.get(url, timeout=60)
+            r.raise_for_status()
+            cp.write_bytes(r.content)
+        return cp.read_bytes(), ("image/webp" if url.endswith(".webp") else "image/png")
+
     # ----------------------------------------------------------- demo queries
     def has_replay(self, match_id: int) -> bool | None:
         """Whether a replay file is stored for the match, from its salts (does not use the

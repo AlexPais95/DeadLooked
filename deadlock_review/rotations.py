@@ -33,6 +33,10 @@ class ObjectiveVisit:
     closest_m: float | None   # closest you got in the last 15 s
     busy: bool            # fighting an enemy hero at the time (within 40 m)
     allies_there: int
+    in_scope: bool = True # False: another lane during the laning phase (not counted for you)
+    allies: tuple = ()    # heroes within 40 m in the 15 s before, per side
+    enemies: tuple = ()
+    deaths: tuple = ()    # (hero, team) who died within 60 m in the 30 s before
 
     @property
     def there(self) -> bool:
@@ -42,6 +46,15 @@ class ObjectiveVisit:
 def own_lane(p: Player) -> int | None:
     xs = [p.track[s][0] for s in range(*OWN_LANE_WINDOW) if s in p.track and p.track[s][3]]
     return lane_of(statistics.median(xs)) if xs else None
+
+
+def in_scope(p: Player, t: float, x: float) -> bool:
+    """Whether an event counts for this player: during the laning phase (before 10:00) only
+    events in their own lane do; after that, everything does."""
+    if t >= LANING_END:
+        return True
+    home = own_lane(p)
+    return home is None or lane_of(x) == home
 
 
 def _closest(p: Player, pos, t0: float, t1: float) -> float | None:
@@ -97,7 +110,7 @@ def fight_arrivals(m: Match, p: Player, fights) -> list[float]:
     out = []
     for f in fights:
         t0 = f.deaths[0][0]
-        if not p.alive_at(t0):
+        if not p.alive_at(t0) or not in_scope(p, t0, f.center[0]):
             continue
         spots = [pos for (_, pos) in _death_spots(m, f)]
         if not spots:
@@ -126,11 +139,16 @@ def objective_visits(m: Match, p: Player) -> list[ObjectiveVisit]:
         alive = p.alive_at(o.t)
         closest = _closest(p, o.pos, o.t - OBJECTIVE_LOOKBACK_S, o.t)
         _, enemies = m.near(p, o.t, ARRIVED_M) if alive else ([], [])
-        allies = sum(1 for q in m.team(p.team) if q.slot != p.slot
-                     and (_closest(q, o.pos, o.t - OBJECTIVE_LOOKBACK_S, o.t) or 1e9) <= ARRIVED_M)
+        def there(q):
+            return (_closest(q, o.pos, o.t - OBJECTIVE_LOOKBACK_S, o.t) or 1e9) <= ARRIVED_M
+        ally_names = tuple(q.hero for q in m.team(p.team) if q.slot != p.slot and there(q))
+        enemy_names = tuple(q.hero for q in m.players.values() if q.team != p.team and there(q))
+        died = tuple((q.hero, q.team) for q in m.players.values() for d in q.deaths
+                     if o.t - 30 <= d.t <= o.t + 2 and d.pos and dist_m(d.pos, o.pos) <= 60)
         where = "base" if o.kind in BASE_KINDS else LANES[lane_of(o.pos[0])]
         out.append(ObjectiveVisit(o.t, o.kind, o.team == p.team, where, alive,
-                                  closest, bool(enemies), allies))
+                                  closest, bool(enemies), len(ally_names), in_scope(p, o.t, o.pos[0]),
+                                  ally_names, enemy_names, died))
     return out
 
 
@@ -147,7 +165,7 @@ def rotation_metrics(m: Match, p: Player, fights) -> dict:
         out["lane_changes_per10"] = lane_changes(p, LANING_END, m.duration) / alive_min * 10
     arr = fight_arrivals(m, p, fights)
     out["fight_arrival_s"] = statistics.median(arr) if arr else None
-    visits = [v for v in objective_visits(m, p) if v.alive and v.kind != "Patron"]
+    visits = [v for v in objective_visits(m, p) if v.alive and v.kind != "Patron" and v.in_scope]
     lost = [v for v in visits if v.lost]
     taken = [v for v in visits if not v.lost]
     out["objectives_defended"] = sum(v.there for v in lost) / len(lost) if lost else None
@@ -160,7 +178,7 @@ def rotation_findings(m: Match, p: Player):
     from .analysis import Finding  # local import: analysis imports this module's users
     found = []
     for v in objective_visits(m, p):
-        if not (v.lost and v.alive and not v.busy and v.closest_m is not None and v.closest_m > FAR_M):
+        if not (v.in_scope and v.lost and v.alive and not v.busy and v.closest_m is not None and v.closest_m > FAR_M):
             continue
         impact = OBJECTIVE_IMPACT.get(v.kind, 1.0)
         if not impact:

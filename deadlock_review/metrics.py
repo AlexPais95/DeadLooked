@@ -13,7 +13,7 @@ from .analysis import (ISOLATED_M, _killer_ult, _present_seconds, find_fights, f
                        hero_efficiency, ult_windows)
 from .heroes import cfg
 from .match import Match, Player, dist_m
-from .rotations import needed_metrics, rotation_metrics
+from .rotations import in_scope, needed_metrics, rotation_metrics
 
 # name -> (label, higher_is_better)
 METRICS = {
@@ -72,7 +72,8 @@ def player_metrics(m: Match, p: Player, fights=None, damage_rows=None) -> dict:
     out["isolated_death_share"] = isolated / judged if judged else None
 
     # fights
-    alive_fights = [f for f in fights if p.alive_at(f.deaths[0][0] - 5) and p.alive_at(f.end)]
+    alive_fights = [f for f in fights if p.alive_at(f.deaths[0][0] - 5) and p.alive_at(f.end)
+                    and (in_scope(p, f.deaths[0][0], f.center[0]) or _present_seconds(m, p, f) > 0)]
     if alive_fights:
         out["fight_presence"] = sum(1 for f in alive_fights if _present_seconds(m, p, f) > 0) / len(alive_fights)
     if damage_rows is not None:

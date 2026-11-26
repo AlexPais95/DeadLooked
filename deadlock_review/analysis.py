@@ -356,9 +356,12 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
 
         # absent from fights / ult not used in fights
         if m.replay_ok:
+            from .rotations import in_scope
             for f in fights:
                 if not (p.alive_at(f.start) and p.alive_at(f.end)):
                     continue
+                if not in_scope(p, f.deaths[0][0], f.center[0]):
+                    continue  # another lane during the laning phase
                 dmin = _fight_distance(p, f)
                 if dmin is None:
                     continue
