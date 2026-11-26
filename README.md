@@ -8,10 +8,10 @@ against the match replay.
 
 ```bash
 pip install -r requirements.txt
-python -m deadlock_review 143558839 --hero Dynamo
+python -m deadlock_review 143558839 --hero Dynamo --html
 ```
 
-The report is written to `reports/<match_id>.md`.
+The report is written to `reports/<match_id>.md`. With `--html` you also get `reports/<match_id>.html`: a visual version with a match timeline (soul difference, fights, ultimate cooldowns, deaths, objectives), a map of your deaths, kills and objectives, ranked mistakes, comparison bars against top-tier players, and fight and objective tables. It is a single file with no scripts; open it in any browser.
 
 | Option | Meaning |
 |---|---|
@@ -20,6 +20,8 @@ The report is written to `reports/<match_id>.md`.
 | `--no-benchmarks` | Skip comparing item timings and ability order with top-tier players |
 | `--min-badge N` | Rank used for benchmarks (default 90 = Phantom and above) |
 | `--out FILE` | Where to write the report |
+| `--html` | Also write the visual HTML report |
+| `--wait MIN` | Keep retrying up to MIN minutes while the API fetches a new match from Steam |
 
 Each match costs **6 replay queries**. The API allows 200 per hour per IP, and results are
 cached in `.cache/`, so re-running a report is free.

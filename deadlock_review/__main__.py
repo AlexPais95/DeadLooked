@@ -32,6 +32,7 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", default=".cache")
     ap.add_argument("--baselines", default="baselines/summary.json", help="top-tier baseline summary (from collect)")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--html", action="store_true", help="also write a visual HTML report (reports/<match>.html)")
     ap.add_argument("--wait", type=int, default=0, metavar="MIN",
                     help="keep retrying for up to MIN minutes if the match must still be fetched from Steam")
     a = ap.parse_args(argv)
@@ -76,6 +77,11 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md)
     print(f"Report written to {out}")
+    if a.html and focus:
+        from .report_html import full_document, render_html
+        hout = out.with_suffix(".html")
+        hout.write_text(full_document(render_html(m, fights, findings, focus, extras)))
+        print(f"Visual report written to {hout}")
     return 0
 
 
