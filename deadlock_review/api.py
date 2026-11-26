@@ -89,6 +89,15 @@ class Api:
         }
         return self._get_json("/v1/analytics/item-stats", params, max_age=DAY)
 
+    def item_stats_vs(self, hero_id: int, min_badge: int, enemy_ids: list[int] | None = None,
+                      days: int = 30) -> list[dict]:
+        """Item purchase stats for a hero, optionally only in games against any of these enemy heroes."""
+        params = {"hero_id": hero_id, "game_mode": "normal", "min_average_badge": min_badge,
+                  "min_unix_timestamp": _day_floor() - days * DAY, "min_matches": 10}
+        if enemy_ids:
+            params["enemy_hero_ids"] = ",".join(str(i) for i in sorted(enemy_ids))
+        return self._get_json("/v1/analytics/item-stats", params, max_age=DAY)
+
     def ability_order_stats(self, hero_id: int, min_badge: int, days: int = 30) -> list[dict]:
         params = {
             "hero_id": hero_id,

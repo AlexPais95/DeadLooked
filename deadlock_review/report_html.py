@@ -224,6 +224,7 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .ctrs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr)); gap: 12px; }
 .ctr { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 12px; align-content: start; }
 .ctr.missing { border-left: 4px solid var(--bad); } .ctr.answered { border-left: 4px solid var(--good); }
+.ctr.teamcov { border-left-color: var(--muted); }
 .ctr-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; flex-wrap: wrap; }
 .ctr-head h3 { font-size: 1.35rem; margin-top: 4px; }
 .ctr-head .pill { white-space: normal; text-align: left; }
@@ -245,6 +246,14 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
   font: 600 .6rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px;
   background: var(--good); color: var(--bg); }
 .ctr-items { padding-top: 6px; }
+.ctr-have { display: grid; gap: 6px; font-size: .84rem; }
+.ctr-have .lab { font: 600 .62rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.have-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.have { display: inline-flex; align-items: center; gap: 8px; }
+.have .face { width: 24px; height: 24px; }
+.have small { color: var(--muted); }
+.it .top { font: 600 .62rem/1.2 var(--mono); color: var(--brass); }
+.it .top.none { color: var(--muted); font-weight: 500; }
 .role { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: .88rem; }
 .it.owned small { color: var(--brass); font-weight: 600; }
 
@@ -726,24 +735,35 @@ def _counters(m: Match, p, needs, role=None) -> str:
             name, t, sold = n.bought[0]
             status = f'<span class="pill good">You bought {E(name)} at {fmt_t(t)}</span>'
             cls = "answered"
+        elif n.covered:
+            status = '<span class="pill mid">Teammates had it</span>'
+            cls = "answered teamcov"
         else:
             status = '<span class="pill bad">You didn\'t buy one</span>'
             cls = "missing"
-        level = "Clear need" if n.strength >= 0.6 else "Worth considering"
+        level = "Clear need" if n.strength >= 0.6 else ("Worth considering" if n.strength >= 0.3 else "Mostly covered")
         tiles = []
         for k, i in enumerate(items):
             b = owned.get(i["name"])
             best = '<span class="best">best fit</span>' if k == 0 and role is not None else ""
             sub = f"bought {fmt_t(b[1])}" if b else f"T{i.get('item_tier')} · {i.get('cost', 0):,}"
+            tp = n.top.get(i["id"])
+            top = (f'<span class="top" title="Bought in {tp[0]:.0%} of ~{n.top_n:,} top-tier {E(p.hero)} games against these enemies, '
+                   f'on average at {fmt_t(tp[1])}; {tp[2]:.0%} of those games were won">{tp[0]:.0%} of top {E(p.hero)}s<br>~{fmt_t(tp[1])}</span>'
+                   if tp and tp[0] >= 0.005 else f'<span class="top none">rare at top tier</span>')
             tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}" '
                          f'title="{E(i["name"])}: tier {i.get("item_tier")}, {i.get("cost", 0):,} souls">'
                          f'{best}{_item_icon(m, i)}<b>{E(i["name"])}</b>'
-                         f'<small class="num">{sub}</small><em>{DELIVERY_TAG[delivery(i)]}</em></div>')
+                         f'<small class="num">{sub}</small>{top}<em>{DELIVERY_TAG[delivery(i)]}</em></div>')
         out.append(f'<article class="ctr {cls}"><div class="ctr-head"><div><span class="eyebrow">{level}</span>'
                    f'<h3>{E(n.title)}</h3></div>{status}</div>'
                    f'<div class="ctr-why"><span class="side">{"".join(_face(*h) for h in n.heroes)}</span>'
                    f'<p>{E(n.why.rstrip("."))}' + (f'. Clear from about {fmt_t(n.since)}.' if n.since else ".") + '</p></div>'
-                   f'<div class="ctr-items">{"".join(tiles)}</div></article>')
+                   + (f'<div class="ctr-have"><span class="lab">You already had</span><p>{E(n.own.replace("You already had ", ""))}</p></div>' if n.own else "")
+                   + (f'<div class="ctr-have"><span class="lab">Already on your team</span><div class="have-list">'
+                      + "".join(f'<span class="have">{_face(h, t, False, False)}<span>{E(it)} <small class="num">{fmt_t(bt)}</small></span></span>'
+                                for h, t, it, bt in n.covered) + '</div></div>' if n.covered else "")
+                   + f'<div class="ctr-items">{"".join(tiles)}</div></article>')
     out.append("</div>")
     return "".join(out)
 
@@ -824,10 +844,11 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     role = (extras.get("role") or {}).get(p.slot)
     if needs:
         L.append('<section><div class="sec-head"><span class="eyebrow">Based on what the enemy team did this game</span>'
-                 '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the '
-                 'numbers behind it, the items that do it (from the game\'s item data) and whether you bought one.</p></div>'
-                 + (f'<div class="role"><span class="pill mid">Your build: {E(role.label)}</span>'
-                    f'<span class="muted">{E(role.describe())}. Items are ranked for this build; ones that don\'t work with it are left out.</span></div>'
+                 '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the numbers behind it. '
+                 'Cards are less important when you or a teammate already had an answer. Items are ranked for your role and by how often '
+                 f'top-tier {E(p.hero)} players buy them against these enemies (and when).</p></div>'
+                 + (f'<div class="role"><span class="pill mid">Your role: {E(role.label)}</span>'
+                    f'<span class="muted">{E(role.describe())}. {E(role.ranking_note())}. Items that don\'t work with your damage are left out.</span></div>'
                     if role else "")
                  + _counters(m, p, needs, role) + "</section>")
 

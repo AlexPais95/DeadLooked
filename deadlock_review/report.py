@@ -144,14 +144,23 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
         w("")
         role = (extras.get("role") or {}).get(slot)
         if role:
-            w(f"Your build: **{role.label}** ({role.describe()}). Options are ranked for this build; items that don't work with it are left out.")
+            w(f"Your role: **{role.label}**. {role.describe()}. {role.ranking_note()}. Items that don't work with your damage are left out.")
             w("")
         for n in needs:
-            got = (f"you bought {n.bought[0][0]} at {fmt_t(n.bought[0][1])}" if n.bought else "**you didn't buy one**")
+            got = (f"you bought {n.bought[0][0]} at {fmt_t(n.bought[0][1])}" if n.bought
+                   else "teammates had it" if n.covered else "**you didn't buy one**")
             since = f" Clear from about {fmt_t(n.since)}." if n.since else ""
-            w(f"- **{n.title}** ({'clear need' if n.strength >= 0.6 else 'worth considering'}) - {got}  ")
+            level = "clear need" if n.strength >= 0.6 else ("worth considering" if n.strength >= 0.3 else "mostly covered")
+            w(f"- **{n.title}** ({level}) - {got}  ")
             w(f"  {n.why.rstrip('.')}.{since}  ")
             options = ", ".join(f"{i['name']} (T{i.get('item_tier')})" for i in n.items[:6])
+            if n.own:
+                w(f"  {n.own}.  ")
+            if n.covered:
+                w("  Already on your team: " + ", ".join(f"{h} ({it}, {fmt_t(bt)})" for h, _, it, bt in n.covered) + ".  ")
+            options = ", ".join(
+                f"{i['name']} (T{i.get('item_tier')}" + (f"; top {m.players[slot].hero}s buy it in {n.top[i['id']][0]:.0%} of games, ~{fmt_t(n.top[i['id']][1])}" if n.top.get(i['id'], (0,))[0] >= 0.005 else "; rare at top tier") + ")"
+                for i in n.items[:5])
             w(f"  Options: {options}")
         w("")
 
