@@ -49,8 +49,7 @@ cached in `.cache/`, so re-running a report is free.
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
 - **Items to answer the enemy team** (`counters.py`): anti-heal when an enemy healed more per minute than 80% of players in the collected top-tier games; spirit or bullet resist when 60%+ of the damage you took was that type (replay damage types); spirit or bullet shred when 60%+ of your damage was that type and enemies built 25%+ of the matching resist; silence, disarm or stun for their carry (the richer enemy with the most damage to your team). Items are picked from the item assets by what they do (property values and descriptions), so the lists follow patches. Options are ranked for your role. The role is what your hero is meant to do at top tier, from 30 days of Phantom+ hero averages (souls, hero damage, damage taken, max health, compared across all heroes) and the healing/barrier the hero gives teammates in the collected games: carry, frontliner or support. The report also says how you played it this game. Your damage type (spirit, gun, hybrid) decides which items work at all; each item is classed by how it delivers its effect (your spirit damage, your bullets, melee, an active, or passive). Supports get cheaper items, actives and team-wide items first; frontliners get vitality and close-range items; carries get bigger scaling items; items costing more than a quarter of your souls when the need was clear rank lower. Within that, items are ranked by how often top-tier players of your hero buy them against the same enemies (`item-stats` with `enemy_hero_ids`), shown with the typical buy time. Needs you already answered count less: resist you already had from items, and anti-heal, shred or crowd control a teammate already bought (shown with their portrait, item and time). Each need says whether and when you bought an answer; clear needs you never answered are listed as mistakes
 
-Findings are ranked by an **impact** score: a hand-made estimate of how much the mistake
-cost the team (death timer length, objectives lost while dead, fights lost).
+Findings are ranked by **Win Probability Added**: how much each one changed your team's chance of winning (see below).
 
 Hero-specific settings (ultimate radius, escape ability, key items, tips) live in
 `deadlock_review/heroes.py`. Dynamo, Wraith and Ivy are configured; other heroes use defaults.
@@ -102,6 +101,37 @@ The counter-item cards show this number, treat differences inside the 95% margin
 effect", and use clear effects in the ranking. It is still not proof of cause (who buys an item
 also differs), but it removes the biggest bias: being ahead or behind when it was bought.
 
+## Win Probability Added for every event (v3)
+
+`wpa.py` uses the same model, extended with objectives and deaths: a team's chance of winning from
+its soul lead (souls every 10 s from the replay), Guardians / Walkers / Base Guardians / Shrines /
+the Patron's first phase taken minus lost, and heroes alive minus theirs. One logistic model for the
+whole game: objectives have one value each, souls and heroes alive change value with game time.
+Fitted on 5,000 Phantom+ matches (held-out Brier 0.176; soul lead alone 0.181).
+
+What it learned, from an even game: +1,000 souls is worth +4% early and +1.5% after 35 min; one more
+hero alive ~0 early and +7% at 35 min; a Guardian +1%, a Walker +5%, a Base Guardian +4%, a Shrine +8%,
+the Patron's first phase +15% (on top of the souls they give). A death of your team typically costs
+under 1% before 20 min and 4-9% after 25 min (souls, objectives and deaths that usually follow).
+
+Every finding is then scored by how much it moved your team's win chance:
+
+| Finding | Window |
+|---|---|
+| Death | 2 s before to 45 s after, shared between your team's deaths in that window |
+| Objective lost / taken | 2 s before it fell to 10 s after |
+| Ultimate | 1 s before the cast to 15 s after |
+| Multi-kill | 2 s before the first kill to 20 s after the last |
+| Missed fight | the fight's swing, shared between the teammates who weren't there |
+| Fight damage | your sixth of the fight's swing |
+
+Mistakes and big plays are ranked by it ("-9.2% win chance"). Findings without a clean window
+("3+ deaths before 10:00", "farming while needed") are converted from their old impact score with
+this match's ratio between impact and measured swings, and marked as estimates. The report adds a
+win-chance chart with the biggest swings and each fight's swing. Limits: windows can overlap (a
+Singularity and the double kill right after it share the same fight), and the model knows souls,
+objectives and heroes alive but not items, ultimates ready or positions.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).
@@ -125,4 +155,4 @@ also differs), but it removes the biggest bias: being ahead or behind when it wa
 ## Roadmap
 
 - **v2 – top-tier baselines:** per hero, collect Phantom+ matches and measure normal ranges (distance to teammates, enemies caught per ultimate, farm per minute, item and ability timings). Flag deviations instead of fixed thresholds.
-- **v3 – win probability (started: `winprob.py` scores items):** train a win-probability model on match states (time, soul difference, objectives, players alive, ultimates ready) from many matches, then score every event by how much it changed the team's chance of winning (Win Probability Added). This is the approach behind xPetu's Coachless for League of Legends. It replaces the hand-made impact score and gives an objective ranking of mistakes for each player and for the team.
+- **v3 – win probability (done: `winprob.py` + `wpa.py`):** train a win-probability model on match states (time, soul difference, objectives, players alive, ultimates ready) from many matches, then score every event by how much it changed the team's chance of winning (Win Probability Added). This is the approach behind xPetu's Coachless for League of Legends. It replaces the hand-made impact score and gives an objective ranking of mistakes for each player and for the team.

@@ -33,6 +33,14 @@ class Finding:
     # heroes involved, for pictures: (hero name, team, died there, is the reviewed player)
     people: tuple = ()
     short: str = ""   # detail without the names (shown next to the pictures)
+    wpa: float | None = None   # change in your team's win chance (-1..1), from wpa.py
+    wpa_how: str = ""
+
+
+def rank_key(f: "Finding") -> float:
+    """Sort key: biggest cost first for mistakes, biggest gain first for plays."""
+    v = f.wpa if f.wpa is not None else (f.impact if f.good else -f.impact) * 0.01
+    return -v if f.good else v
 
 
 def _died(q: Player, t0: float, t1: float) -> bool:
@@ -472,6 +480,8 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         ult, casts, ready = ult_windows(m, p)
         if ult and casts:
             extras["ult"][s] = [(c, *ability_cooldown_at(m, p, ult, c)) for c in casts]
+    from .wpa import apply as apply_wpa
+    extras["wp"] = apply_wpa(m, fights, findings, focus_slots) if m.replay_ok else None
     return fights, findings, extras
 
 

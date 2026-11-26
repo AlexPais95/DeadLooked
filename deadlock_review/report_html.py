@@ -13,7 +13,7 @@ import statistics
 from .analysis import Finding
 from .match import Match, fmt_t, lane_of
 from .report import TEAM_NAMES, PERCENT_KEYS
-from .analysis import visit_people
+from .analysis import rank_key, visit_people
 
 E = html.escape
 
@@ -107,6 +107,7 @@ ol.mistakes.good .impact .bar i { background: var(--good); }
 .map.big svg { max-width: 760px; }
 .map.big .legend { justify-content: center; margin-top: 10px; }
 .impact span { font: 500 .72rem/1 var(--mono); color: var(--muted); }
+.impact span.est::after { content: " (est.)"; }
 @media (max-width: 560px) { ol.mistakes li { grid-template-columns: 2rem minmax(0, 1fr); }
   .impact { grid-column: 2; grid-row: auto; justify-items: start; } .impact .bar { width: 8rem; } }
 ul.wins { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
@@ -148,6 +149,8 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .fight.won { border-left-color: var(--good); } .fight.lost { border-left-color: var(--bad); }
 .f-when { display: grid; gap: 4px; } .f-when b { font-size: 1.05rem; }
 .res { font: 600 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.swing { font: 600 .66rem/1 var(--mono); } .swing.up { color: var(--good); } .swing.down { color: var(--bad); }
+.chart-title { font-size: 1rem; color: var(--muted); }
 .res.won { color: var(--good); } .res.lost { color: var(--bad); } .res.even { color: var(--muted); }
 .pips { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .pips i { width: 8px; height: 8px; border-radius: 50%; }
@@ -302,8 +305,58 @@ def _fmt_val(key: str, v: float) -> str:
 
 
 # ------------------------------------------------------------------ timeline
+def _wp_matches() -> int:
+    from .winprob import load
+    return (load() or {}).get("matches", 0)
+
+
+def _wp_chart(m: Match, p, wpm) -> str:
+    """Your team's chance of winning over the game (win probability model)."""
+    W, PADL, PADR, top, ch = 1000, 80, 12, 12, 150
+    H = top + ch + 24
+    dur = m.duration
+    X = lambda t: PADL + (W - PADL - PADR) * t / dur
+    Y = lambda v: top + ch * (1 - v)
+    pts = wpm.curve(p.team, step=10)
+    line = " ".join(f"{X(t):.1f},{Y(v):.1f}" for t, v in pts)
+    mid = Y(0.5)
+    area = f"{X(0):.1f},{mid:.1f} {line} {X(pts[-1][0]):.1f},{mid:.1f}"
+    me, them = _team_var(p.team), _team_var(1 - p.team)
+    s = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Your team\'s chance of winning over the game">',
+         f'<defs><clipPath id="wpup"><rect x="0" y="0" width="{W}" height="{mid:.1f}"/></clipPath>'
+         f'<clipPath id="wpdown"><rect x="0" y="{mid:.1f}" width="{W}" height="{H}"/></clipPath></defs>']
+    for v in (0.25, 0.5, 0.75):
+        s.append(f'<line x1="{PADL}" x2="{W - PADR}" y1="{Y(v):.1f}" y2="{Y(v):.1f}" stroke="var(--line)"'
+                 f'{"" if v == 0.5 else " stroke-dasharray=\"2 4\""}/><text x="{PADL - 8}" y="{Y(v) + 4:.1f}" text-anchor="end">{v:.0%}</text>')
+    for t in range(0, dur + 1, 300):
+        s.append(f'<text x="{X(t):.1f}" y="{H - 6}" text-anchor="middle">{t // 60}:00</text>')
+    s.append(f'<polygon points="{area}" fill="{me}" fill-opacity=".35" clip-path="url(#wpup)"/>'
+             f'<polygon points="{area}" fill="{them}" fill-opacity=".35" clip-path="url(#wpdown)"/>'
+             f'<polyline points="{line}" fill="none" stroke="var(--fg)" stroke-width="1.8"/>')
+    # biggest swings over 30 s, labelled
+    swings = []
+    for i in range(0, len(pts) - 3):
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 3]
+        swings.append((v1 - v0, t0, t1, v1))
+    picked = []
+    for sw in sorted(swings, key=lambda x: -abs(x[0])):
+        if abs(sw[0]) < 0.06 or len(picked) >= 4:
+            break
+        if all(abs(sw[1] - q[1]) > 90 for q in picked):
+            picked.append(sw)
+    for d, t0, t1, v1 in picked:
+        col = "var(--good)" if d > 0 else "var(--bad)"
+        right = X(t1) > W - 160
+        s.append(f'<circle cx="{X(t1):.1f}" cy="{Y(v1):.1f}" r="4" fill="{col}"><title>{fmt_t(t0)}–{fmt_t(t1)}: {100 * d:+.0f}%</title></circle>'
+                 f'<text x="{X(t1) + (-6 if right else 6):.1f}" y="{Y(v1) + (14 if d < 0 else -6):.1f}" text-anchor="{"end" if right else "start"}" '
+                 f'style="fill:{col}">{100 * d:+.0f}% at {fmt_t(t0)}</text>')
+    s.append("</svg>")
+    return "".join(s)
+
+
 def _timeline(m: Match, p, fights, extras) -> str:
-    W, PADL, PADR = 1000, 54, 12
+    W, PADL, PADR = 1000, 80, 12
     top, ch = 16, 150                       # soul-difference area
     rows = ["Fights", "Ultimate", "Deaths", "Objectives"]
     row_y0, row_h = top + ch + 30, 26
@@ -545,8 +598,12 @@ def _fights(m: Match, p, fights, extras) -> str:
                 + "".join(f'<i style="background:{them_col}"></i>' for _ in range(k))
                 + '<em class="num">' + f"{k}–{d}" + "</em>"
                 + "".join(f'<i style="background:{me_col}"></i>' for _ in range(d)) + "</span>")
+        wpm = extras.get("wp")
+        sw = wpm.swing(p.team, f.deaths[0][0] - 5, f.end + 10) if wpm else None
+        swing = (f'<span class="swing {"up" if sw > 0 else "down"}" title="Change in your team\'s chance of winning from just before '
+                 f'the fight to 10s after">{100 * sw:+.1f}% win</span>' if sw is not None else "")
         out.append(f'<div class="fight {cls}"><div class="f-when"><b class="num">{fmt_t(f.deaths[0][0])}</b>'
-                   f'<span class="res {cls}">{res}</span></div>{pips}<div class="f-bar">{bar}</div>'
+                   f'<span class="res {cls}">{res}</span>{swing}</div>{pips}<div class="f-bar">{bar}</div>'
                    f'<div class="f-you">{you_html}</div></div>')
     if hidden:
         out.append(f'<p class="muted note">{len(hidden)} early fight(s) in other lanes before 10:00 that you weren\'t in are left out: '
@@ -696,12 +753,14 @@ FACES_KEY = ('<div class="legend faces-key"><span><span class="face t0 me mini">
 
 def _ranked(items, tone: str, my_team: int = 0) -> str:
     """Numbered cards with an impact bar: mistakes (red) or big plays (green)."""
-    top = max((f.impact for f in items), default=1) or 1
+    mag = lambda f: abs(f.wpa) if f.wpa is not None else f.impact * 0.01
+    top = max((mag(f) for f in items), default=1) or 1
     out = [f'<ol class="mistakes {tone}">']
     for f in items:
         out.append(f'<li><div class="m-title">{E(f.title)}</div>'
-                   f'<div class="impact"><div class="bar"><i style="width:{f.impact / top * 100:.0f}%"></i></div>'
-                   f'<span>{"impact" if tone == "bad" else "value"} {f.impact:.1f}</span></div>'
+                   f'<div class="impact" title="{E(f.wpa_how)}"><div class="bar"><i style="width:{mag(f) / top * 100:.0f}%"></i></div>'
+                   + (f'<span class="{"est" if "estimated" in f.wpa_how else ""}">{100 * f.wpa:+.1f}% win chance</span></div>'
+                      if f.wpa is not None else f'<span>impact {f.impact:.1f}</span></div>')
                    + (_faces(f.people, my_team) if f.people else "")
                    + ((lambda d: f'<div class="m-detail">{E(d)}</div>' if d else "")
                       ((f.short if f.people else f.detail).strip().rstrip(";").strip()))
@@ -793,7 +852,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     base = (extras.get("baseline") or {}).get(p.slot) or []
     n_games = max((r["n"] for r in base), default=0)
     worst, best = _verdict(base)
-    bad = sorted([f for f in findings if f.slot == p.slot and not f.good], key=lambda f: -f.impact)
+    bad = sorted([f for f in findings if f.slot == p.slot and not f.good], key=rank_key)
     good = [f for f in findings if f.slot == p.slot and f.good]
     max_imp = max((f.impact for f in bad[:top_n]), default=1)
 
@@ -822,9 +881,13 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
 
     # timeline
     L.append('<section><div class="sec-head"><span class="eyebrow">How the game went</span><h2>Match timeline</h2>'
-             '<p>Soul difference between the teams, with every fight, your ultimates and their cooldowns, your deaths '
-             'and every objective that fell. Hover any mark for details.</p></div>'
-             f'<div class="chart">{_timeline(m, p, fights, extras)}</div>'
+             '<p>Your team\'s chance of winning, then the soul difference with every fight, your ultimates and their cooldowns, '
+             'your deaths and every objective that fell. Hover any mark for details.</p></div>'
+             + (f'<h3 class="chart-title">Your team\'s chance of winning</h3><div class="chart">{_wp_chart(m, p, extras["wp"])}</div>'
+                f'<p class="muted note">From a win probability model fitted on {_wp_matches():,} recent top-tier matches: soul lead, '
+                'objectives taken and lost (Guardians, Walkers, Base Guardians, Shrines, the Patron&#39;s first phase) and heroes alive. Dots mark the biggest swings.</p>'
+                '<h3 class="chart-title">Souls and events</h3>' if extras.get("wp") else "")
+             + f'<div class="chart">{_timeline(m, p, fights, extras)}</div>'
              '<div class="legend"><span><i style="background:var(--good)"></i>fight won / objective taken</span>'
              '<span><i style="background:var(--bad)"></i>fight lost / objective lost / your death</span>'
              '<span><i style="background:var(--muted)"></i>even fight / ultimate on cooldown</span>'
@@ -841,12 +904,12 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
                  f'<span>{_key("dead", "var(--muted)")}destroyed objective</span></div></div></section>')
 
     # mistakes and big plays, side by side
-    plays = sorted(good, key=lambda f: -f.impact)
+    plays = sorted([f for f in good if f.wpa is None or f.wpa > 0.005], key=rank_key)
     L.append('<section><div class="two ranked">'
              '<div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated cost to your team</span>'
              '<h2>Biggest mistakes</h2></div>' + _ranked(bad[:top_n], "bad", p.team)
              + (f'<p class="muted note">{len(bad) - top_n} smaller issues are in the Markdown report.</p>' if len(bad) > top_n else "")
-             + '</div><div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated value to your team</span>'
+             + '</div><div class="col"><div class="sec-head"><span class="eyebrow">Ranked by how much they raised your team\'s win chance</span>'
              '<h2>Big plays</h2></div>'
              + (_ranked(plays[:top_n], "good", p.team) if plays else '<p class="muted">No standout plays found this game.</p>')
              + '</div></div>' + FACES_KEY + '</section>')
@@ -893,7 +956,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
         for q in m.team(team):
             if q.slot in focus_slots:
                 continue
-            qb = sorted([f for f in findings if f.slot == q.slot and not f.good], key=lambda f: -f.impact)[:3]
+            qb = sorted([f for f in findings if f.slot == q.slot and not f.good], key=rank_key)[:3]
             tag = "ally" if team == p.team else "enemy"
             L.append(f'<details><summary><span class="t{team}">{E(q.hero)}</span> <span class="muted num">'
                      f'{q.kills}/{q.deaths_n}/{q.assists} · {q.net_worth:,} souls · {tag}</span></summary><ul>'

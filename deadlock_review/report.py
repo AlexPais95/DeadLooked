@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .analysis import Finding, Fight
+from .analysis import Finding, Fight, rank_key
 from .match import Match, fmt_t
 
 TEAM_NAMES = {0: "Hidden King (team 0)", 1: "Archmother (team 1)"}
@@ -83,22 +83,23 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
     # ----- focus players
     for p in focus:
         pf = [f for f in findings if f.slot == p.slot]
-        bad = sorted([f for f in pf if not f.good], key=lambda f: -f.impact)
-        good = [f for f in pf if f.good]
+        bad = sorted([f for f in pf if not f.good], key=rank_key)
+        good = sorted([f for f in pf if f.good and (f.wpa is None or f.wpa > 0.005)], key=rank_key)
         w(f"## Your biggest mistakes - {p.hero}")
         w("")
-        w("Ranked by estimated impact (higher = cost your team more). "
-          "Impact is a rough heuristic until a win-probability model replaces it.")
+        w("Ranked by how much each one changed your team's chance of winning (win probability model "
+          "fitted on recent top-tier matches; see README).")
         w("")
         for i, f in enumerate(bad[:top_n], 1):
-            w(f"{i}. **{f.title}** (impact {f.impact:.1f})" + (f"  \n   {f.detail}" if f.detail else ""))
+            cost = (f"{100 * f.wpa:+.1f}% win chance" + ("" if "estimated" not in f.wpa_how else ", estimated")) if f.wpa is not None else f"impact {f.impact:.1f}"
+            w(f"{i}. **{f.title}** ({cost})" + (f"  \n   {f.detail}" if f.detail else ""))
         if len(bad) > top_n:
             w(f"\n_{len(bad) - top_n} smaller issues not shown._")
         if good:
             w("")
             w("**What went well:**")
             for f in good:
-                w(f"- {f.title} — {f.detail}")
+                w(f"- {f.title}" + (f" ({100 * f.wpa:+.1f}% win chance)" if f.wpa is not None else "") + f" — {f.detail}")
         ult_info = extras.get("ult", {}).get(p.slot)
         if ult_info:
             w("")
@@ -238,7 +239,7 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
         for p in m.team(team):
             if p.slot in focus_slots:
                 continue
-            bad = sorted([f for f in findings if f.slot == p.slot and not f.good], key=lambda f: -f.impact)[:3]
+            bad = sorted([f for f in findings if f.slot == p.slot and not f.good], key=rank_key)[:3]
             if not bad:
                 continue
             w(f"**{p.hero}** ({_team_label(m, team, focus_team)}, {p.kills}/{p.deaths_n}/{p.assists}): "

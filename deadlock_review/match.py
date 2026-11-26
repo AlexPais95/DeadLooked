@@ -25,6 +25,11 @@ SQL_CONTROLLERS = (
     'last_value("m_hHeroPawn" ORDER BY tick) AS pawn, last_value("m_iTeamNum" ORDER BY tick) AS team '
     'FROM CCitadelPlayerController WHERE "m_PlayerDataGlobal__m_nHeroID" > 0 GROUP BY entity_index'
 )
+SQL_NETWORTH = (
+    'SELECT CAST(tick / 640 AS INT) AS b, last_value("m_PlayerDataGlobal__m_nHeroID" ORDER BY tick) AS hero, '
+    'last_value("m_PlayerDataGlobal__m_iGoldNetWorth" ORDER BY tick) AS nw, MAX(tick) AS tick '
+    'FROM CCitadelPlayerController WHERE "m_PlayerDataGlobal__m_nHeroID" > 0 GROUP BY 1, entity_index'
+)
 SQL_POSITIONS = (
     "SELECT entity_index, CAST(tick / 64 AS INT) AS sec, "
     'last_value("m_lifeState" ORDER BY tick) AS life, last_value("m_iHealth" ORDER BY tick) AS hp, '
@@ -109,6 +114,7 @@ class Player:
     item_buys: list[tuple[int, str, int, int | None]] = field(default_factory=list)  # (t, name, tier, sold_t)
     ability_ups: list[tuple[int, str]] = field(default_factory=list)  # (t, class_name)
     nw_by_time: dict[int, int] = field(default_factory=dict)
+    nw_fine: dict[int, int] = field(default_factory=dict)   # souls every ~10 s from the replay
     casts: list[Cast] = field(default_factory=list)
     items: list[ItemBuy] = field(default_factory=list)
     entity: int | None = None
@@ -270,6 +276,15 @@ class Match:
                 dmg = self.players[att].damage_out
                 dmg[t] = dmg.get(t, 0) + (r["dmg"] or 0)
 
+        # souls every 10 s (the metadata only has them every few minutes)
+        try:
+            for r in self.api.demo_query(mid, SQL_NETWORTH, "networth"):
+                slot = hero_to_slot.get(r.get("hero"))
+                if slot is not None and r.get("nw") is not None:
+                    self.players[slot].nw_fine[int(round(self.tick_to_t(r["tick"])))] = r["nw"]
+        except Exception:
+            pass
+
         # objective kills with positions (objective_team uses Source numbering: 2 = team 0, 3 = team 1)
         for r in self.api.demo_query(mid, SQL_BOSSES, "bosses"):
             kind = BOSS_KINDS.get(r["entity_killed_class"])
@@ -325,22 +340,17 @@ class Match:
                 (allies if p.team == who.team else enemies).append((p, d))
         return sorted(allies, key=lambda z: z[1]), sorted(enemies, key=lambda z: z[1])
 
-    def networth_at(self, p: Player, t: int) -> int:
-        keys = sorted(p.nw_by_time)
+    def networth_at(self, p: Player, t: float) -> int:
+        """Souls at time t, interpolated between the stats snapshots (starting from 0 at 0:00),
+        the same way the win probability model was trained."""
+        src = p.nw_fine if len(p.nw_fine) > 10 else p.nw_by_time
+        keys = [0] + sorted(k for k in src if k > 0)
+        vals = [0] + [src[k] for k in keys[1:]]
+        if t >= keys[-1]:
+            return vals[-1]
         i = bisect.bisect_right(keys, t) - 1
-        if i < 0:
-            return p.nw_by_time[keys[0]] if keys else 0
-        if i + 1 < len(keys):  # interpolate between snapshots
-            t0, t1 = keys[i], keys[i + 1]
-            n0, n1 = p.nw_by_time[t0], p.nw_by_time[t1]
-            return int(n0 + (n1 - n0) * (t - t0) / (t1 - t0))
-        return p.nw_by_time[keys[i]]
+        t0, t1 = keys[i], keys[i + 1]
+        return int(vals[i] + (vals[i + 1] - vals[i]) * (t - t0) / ((t1 - t0) or 1))
 
-    def team_networth(self, team: int, t: int) -> int:
-        tot = 0
-        for p in self.team(team):
-            keys = sorted(p.nw_by_time)
-            i = bisect.bisect_right(keys, t) - 1
-            if i >= 0:
-                tot += p.nw_by_time[keys[i]]
-        return tot
+    def team_networth(self, team: int, t: float) -> int:
+        return sum(self.networth_at(p, t) for p in self.team(team))
