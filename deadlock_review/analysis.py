@@ -30,6 +30,17 @@ class Finding:
     title: str
     detail: str = ""
     good: bool = False
+    # heroes involved, for pictures: (hero name, team, died there, is the reviewed player)
+    people: tuple = ()
+    short: str = ""   # detail without the names (shown next to the pictures)
+
+
+def _died(q: Player, t0: float, t1: float) -> bool:
+    return any(t0 <= d.t <= t1 for d in q.deaths)
+
+
+def _person(q: Player, died: bool, you: Player | None = None) -> tuple:
+    return (q.hero, q.team, died, you is not None and q.slot == you.slot)
 
 
 @dataclass
@@ -317,6 +328,7 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 extra.append(f"your team lost {len(obj_lost)} objective(s) while you were dead ({d.duration}s)")
             killer = m.players.get(d.killer_slot)
             kind, title = "death", f"Died at {fmt_t(d.t)}" + (f" to {killer.hero}" if killer else "")
+            enemies, near_allies = [], []
             if m.replay_ok:
                 allies, enemies = m.near(p, d.t - 3, ISOLATED_M + 5)
                 near_allies = [a for a in allies if a[1] <= ISOLATED_M]
@@ -352,7 +364,15 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 elif ult_logged and _ready_at(ready, d.t) and c["ult_kind"] in ("aoe", "target"):
                     extra.append("you died with your ultimate ready")
                     impact += 0.5
-            findings.append(Finding(p.slot, p.team, d.t, kind, impact, title, "; ".join(extra)))
+            people = [_person(p, True, p)]
+            if killer:
+                people.append(_person(killer, _died(killer, d.t - 5, d.t + 5)))
+            if m.replay_ok:
+                people += [_person(e[0], _died(e[0], d.t - 5, d.t + 5)) for e in enemies
+                           if not killer or e[0].slot != killer.slot]
+                people += [_person(a[0], _died(a[0], d.t - 5, d.t + 5)) for a in near_allies]
+            findings.append(Finding(p.slot, p.team, d.t, kind, impact, title, "; ".join(extra), people=tuple(people),
+                                    short="; ".join(x for x in extra if not x.startswith("enemies nearby"))))
 
         # absent from fights / ult not used in fights
         if m.replay_ok:
@@ -388,6 +408,10 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 close_allies = [a for a in allies if a[1] <= 15]
                 kills = [x for x in m.all_deaths() if t <= x[0] <= t + 15 and x[1].team != p.team]
                 losses = [x for x in m.all_deaths() if t <= x[0] <= t + 15 and x[1].team == p.team]
+                people = tuple([_person(p, _died(p, t, t + 15), p)]
+                               + [_person(a[0], _died(a[0], t, t + 15)) for a in close_allies]
+                               + [_person(e[0], _died(e[0], t, t + 15)) for e in caught])
+                outcome = f"next 15s: {len(kills)} enemy deaths, {len(losses)} of yours"
                 desc = (f"enemies within {c['ult_radius_m']} m: {', '.join(e[0].hero for e in caught) or 'none'}; "
                         f"allies within 15 m: {', '.join(a[0].hero for a in close_allies) or 'none'}; "
                         f"next 15s: {len(kills)} enemy deaths, {len(losses)} of yours")
@@ -395,14 +419,16 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                     score = 1.5 + 0.8 * (len(kills) - len(losses)) + 0.3 * len(caught)
                     findings.append(Finding(p.slot, p.team, t, "good_ult", score,
                                             f"{name} at {fmt_t(t)} caught {len(caught)} and won the exchange "
-                                            f"{len(kills)}–{len(losses)}", desc, good=True))
+                                            f"{len(kills)}–{len(losses)}", desc, good=True, people=people, short=outcome))
                 elif c["ult_kind"] in ("aoe", "target") and caught and not close_allies:
                     findings.append(Finding(p.slot, p.team, t, "ult_no_followup", 2.0 + 0.5 * len(losses),
                                             f"{name} at {fmt_t(t)} with no ally within 15 m",
-                                            desc + ". " + tips.get("ult_no_allies", "")))
+                                            desc + ". " + tips.get("ult_no_allies", ""), people=people,
+                                            short=outcome + ". " + tips.get("ult_no_allies", "")))
                 elif c["ult_kind"] == "aoe" and len(caught) <= 1:
                     findings.append(Finding(p.slot, p.team, t, "ult_weak", 1.0,
-                                            f"{name} at {fmt_t(t)} caught {len(caught)} enemy", desc))
+                                            f"{name} at {fmt_t(t)} caught {len(caught)} enemy", desc,
+                                            people=people, short=outcome))
 
         # early deaths (laning)
         lane_deaths = [d for d in p.deaths if d.t < 600]
@@ -599,6 +625,20 @@ PLAY_OBJECTIVE = {"Guardian": 0.8, "Walker": 1.5, "Base Guardian": 1.2, "Shrine"
 MULTI_KILL = {2: "Double kill", 3: "Triple kill", 4: "Quadra kill", 5: "Penta kill", 6: "Hexa kill"}
 
 
+def visit_people(m: Match, p: Player, v) -> tuple:
+    """Heroes at an objective (from rotations.ObjectiveVisit): you if there, then allies, then enemies;
+    anyone who died there is included and marked."""
+    dead = {h for h, _ in v.deaths}
+    names = ([p.hero] if v.there else []) + list(v.allies) + list(v.enemies)
+    names += [h for h, _ in v.deaths if h not in names]
+    out = []
+    for h in names:
+        q = m.by_hero(h)
+        if q:
+            out.append(_person(q, h in dead, p))
+    return tuple(out)
+
+
 def play_findings(m: Match, p: Player) -> list[Finding]:
     """Big plays: multi-kills (your kills within 12 s of each other) and objectives your team
     took with you there."""
@@ -613,9 +653,12 @@ def play_findings(m: Match, p: Player) -> list[Finding]:
         n = j - i + 1
         if n >= 2:
             names = [h for _, h in mine[i:j + 1]]
+            victims = [m.by_hero(h) for h in names]
             out.append(Finding(p.slot, p.team, mine[i][0], "multi_kill", 1.0 * n,
                                f"{MULTI_KILL.get(n, f'{n} kills')} at {fmt_t(mine[i][0])}",
-                               f"you killed {', '.join(names)} within {mine[j][0] - mine[i][0]:.0f}s", good=True))
+                               f"you killed {', '.join(names)} within {mine[j][0] - mine[i][0]:.0f}s", good=True,
+                               people=tuple([_person(p, False, p)] + [_person(v, True) for v in victims if v]),
+                               short=f"{n} kills within {mine[j][0] - mine[i][0]:.0f}s"))
         i = j + 1
     if m.replay_ok:
         from .rotations import objective_visits
@@ -627,7 +670,8 @@ def play_findings(m: Match, p: Player) -> list[Finding]:
             out.append(Finding(p.slot, p.team, v.t, "objective_taken", PLAY_OBJECTIVE.get(v.kind, 1.0),
                                f"Took the {v.kind}" + ("" if v.lane == "base" else f" in the {v.lane}") + f" at {fmt_t(v.t)}",
                                with_ + (f"; {', '.join(died)} died there" if died else "")
-                               + (f"; against {', '.join(v.enemies)}" if v.enemies else ", unopposed"), good=True))
+                               + (f"; against {', '.join(v.enemies)}" if v.enemies else ", unopposed"), good=True,
+                               people=visit_people(m, p, v), short="" if v.enemies else "unopposed"))
     return out
 
 

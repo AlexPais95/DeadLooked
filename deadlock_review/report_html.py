@@ -13,6 +13,7 @@ import statistics
 from .analysis import Finding
 from .match import Match, fmt_t, lane_of
 from .report import TEAM_NAMES, PERCENT_KEYS
+from .analysis import visit_people
 
 E = html.escape
 
@@ -191,6 +192,28 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .obj.taken { background: color-mix(in srgb, var(--good) 18%, var(--surface)); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
 .obj .badge { background: var(--surface); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* hero faces */
+.faces { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0 2px; grid-column: 2; }
+.faces .side { display: inline-flex; flex-wrap: wrap; gap: inherit; align-items: center; }
+.faces .vs { font: 600 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 2px; }
+.faces .nobody { font-size: .78rem; color: var(--muted); font-style: italic; }
+.face { position: relative; width: 32px; height: 32px; flex: none; display: inline-block; --c: var(--muted); }
+.face.t0 { --c: var(--amber); } .face.t1 { --c: var(--sapphire); }
+.face i { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--raise) center / cover no-repeat;
+  box-shadow: 0 0 0 2px var(--c); }
+.face.me i { box-shadow: 0 0 0 2px var(--c), 0 0 0 5px var(--brass); }
+.face.dead i { filter: grayscale(1) brightness(.5); }
+.face.dead::after { content: ""; position: absolute; right: -5px; bottom: -5px; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--surface); box-sizing: border-box;
+  background: var(--bad) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 2.5l5 5M7.5 2.5l-5 5' stroke='white' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / 9px no-repeat; }
+.face.mini { width: 16px; height: 16px; margin-right: 8px; vertical-align: -4px; }
+.face.mini i { box-shadow: 0 0 0 2px var(--c); }
+.face.mini.me i { box-shadow: 0 0 0 2px var(--c), 0 0 0 4px var(--brass); }
+.face.mini.dead::after { width: 11px; height: 11px; right: -4px; bottom: -4px; background-size: 7px; border-width: 1.5px; }
+.faces-key { margin-top: 4px; }
+.obj .faces { grid-column: auto; margin: 6px 0 4px; gap: 6px; }
+.obj .face { width: 26px; height: 26px; }
 
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
@@ -571,10 +594,11 @@ def _objective_cards(m: Match, p, visits) -> str:
         out.append(f'<article class="obj {res} {sc}">{_badge(m, v.kind, owner)}<div class="obj-body">'
                    f'<div class="obj-head"><h3>{E(v.kind)}<span class="sr"> ({res})</span></h3></div>'
                    f'<div class="obj-meta num">{fmt_t(v.t)} · {E(where)}</div>'
-                   f'<p class="obj-story">{_objective_story(v, p)}</p>'
-                   f'<div class="obj-you"><i></i>{E(st)}</div></div></article>')
+                   + _faces(visit_people(m, p, v), p.team)
+                   + f'<div class="obj-you"><i></i>{E(st)}</div></div></article>')
     out.append('</div><div class="legend"><span><i style="background:color-mix(in srgb, var(--good) 45%, var(--surface))"></i>your team took it</span>'
                '<span><i style="background:color-mix(in srgb, var(--bad) 45%, var(--surface))"></i>your team lost it</span></div>')
+    out.append(FACES_KEY)
     if hidden:
         out.append(f'<p class="muted note">{hidden} objective(s) in other lanes before 10:00 are left out: '
                    'during the laning phase only your own lane counts.</p>')
@@ -582,7 +606,48 @@ def _objective_cards(m: Match, p, visits) -> str:
 
 
 # --------------------------------------------------------------------- page
-def _ranked(items, tone: str) -> str:
+def _slug(hero: str) -> str:
+    return "".join(ch for ch in hero.lower() if ch.isalnum())
+
+
+def _portrait_css(m: Match) -> str:
+    """One CSS class per hero in the match with its portrait, so each image is embedded once."""
+    import base64
+    rules = []
+    for q in m.players.values():
+        try:
+            got = m.api.hero_portrait(q.hero_id)
+        except Exception:
+            got = None
+        if got:
+            data, mime = got
+            rules.append(f".face i.h-{_slug(q.hero)}{{background-image:url(data:{mime};base64,{base64.b64encode(data).decode()})}}")
+    return "".join(rules)
+
+
+def _faces(people, my_team: int) -> str:
+    """Your side, 'vs', the enemy side. Died = greyed with a red cross; you = gold ring."""
+    if not people:
+        return ""
+    def face(h, team, died, you):
+        state = "died there" if died else ("you" if you else "")
+        label = f"{h}{' (you)' if you else ''}{' - died' if died else ''}"
+        return (f'<span class="face t{team}{" dead" if died else ""}{" me" if you else ""}" title="{E(label)}" '
+                f'role="img" aria-label="{E(label)}"><i class="h-{_slug(h)}"></i></span>')
+    ours = [x for x in people if x[1] == my_team]
+    theirs = [x for x in people if x[1] != my_team]
+    side = lambda xs: ('<span class="side">' + ("".join(face(*x) for x in xs) or '<span class="nobody">nobody</span>')
+                       + "</span>")
+    out = ['<div class="faces">', side(ours), '<span class="vs">vs</span>', side(theirs), "</div>"]
+    return "".join(out)
+
+
+FACES_KEY = ('<div class="legend faces-key"><span><span class="face t0 me mini"><i></i></span>gold ring = you</span>'
+             '<span><span class="face t1 dead mini"><i></i></span>greyed with a red cross = died there</span>'
+             '<span>ring colour = team</span></div>')
+
+
+def _ranked(items, tone: str, my_team: int = 0) -> str:
     """Numbered cards with an impact bar: mistakes (red) or big plays (green)."""
     top = max((f.impact for f in items), default=1) or 1
     out = [f'<ol class="mistakes {tone}">']
@@ -590,7 +655,10 @@ def _ranked(items, tone: str) -> str:
         out.append(f'<li><div class="m-title">{E(f.title)}</div>'
                    f'<div class="impact"><div class="bar"><i style="width:{f.impact / top * 100:.0f}%"></i></div>'
                    f'<span>{"impact" if tone == "bad" else "value"} {f.impact:.1f}</span></div>'
-                   + (f'<div class="m-detail">{E(f.detail.strip().rstrip(";").strip())}</div>' if f.detail.strip("; ") else "") + "</li>")
+                   + (_faces(f.people, my_team) if f.people else "")
+                   + ((lambda d: f'<div class="m-detail">{E(d)}</div>' if d else "")
+                      ((f.short if f.people else f.detail).strip().rstrip(";").strip()))
+                   + "</li>")
     out.append("</ol>")
     return "".join(out)
 
@@ -613,7 +681,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     max_imp = max((f.impact for f in bad[:top_n]), default=1)
 
     L = [f"<title>{E(p.hero)} · Match {m.match_id}</title>",
-         '<meta name="claude:viewport-fit-sides" content="cover">', FONTS, f"<style>{CSS}</style>", '<div class="wrap">']
+         '<meta name="claude:viewport-fit-sides" content="cover">', FONTS, f"<style>{CSS}{_portrait_css(m)}</style>", '<div class="wrap">']
 
     # hero
     L.append(f'<header class="hero"><span class="eyebrow">Match {m.match_id} · {fmt_t(m.duration)} · '
@@ -658,12 +726,12 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     plays = sorted(good, key=lambda f: -f.impact)
     L.append('<section><div class="two ranked">'
              '<div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated cost to your team</span>'
-             '<h2>Biggest mistakes</h2></div>' + _ranked(bad[:top_n], "bad")
+             '<h2>Biggest mistakes</h2></div>' + _ranked(bad[:top_n], "bad", p.team)
              + (f'<p class="muted note">{len(bad) - top_n} smaller issues are in the Markdown report.</p>' if len(bad) > top_n else "")
              + '</div><div class="col"><div class="sec-head"><span class="eyebrow">Ranked by estimated value to your team</span>'
              '<h2>Big plays</h2></div>'
-             + (_ranked(plays[:top_n], "good") if plays else '<p class="muted">No standout plays found this game.</p>')
-             + '</div></div></section>')
+             + (_ranked(plays[:top_n], "good", p.team) if plays else '<p class="muted">No standout plays found this game.</p>')
+             + '</div></div>' + FACES_KEY + '</section>')
 
     # comparison
     if base:
