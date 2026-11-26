@@ -63,7 +63,7 @@ def build(cache: str = ".cache", store_name: str = "winprob_matches_v3.jsonl") -
                     else:
                         had = any(o[0] < t and o[1] == pl["t"] and o[2] != pi and o[3] == g for o in owned)
                     key = "dup" if had else "first"
-                    for k in (f"{g}|{iid}|{key}", f"{g}|*|{key}"):
+                    for k in (f"{g}|{iid}|{key}", f"{g}|*|{key}", f"{g}|{iid}|{key}|{pl['h']}"):
                         a = acc.setdefault(k, [0, 0.0, 0.0])
                         a[0] += 1
                         a[1] += exp
@@ -72,8 +72,13 @@ def build(cache: str = ".cache", store_name: str = "winprob_matches_v3.jsonl") -
     for k, (n, exp, won) in acc.items():
         if n < MIN_N:
             continue
-        g, iid, key = k.split("|")
+        parts = k.split("|")
+        g, iid, key = parts[:3]
         p = won / n
+        if len(parts) == 4:      # per hero
+            out.setdefault("by_hero", {}).setdefault(parts[3], {}).setdefault(g, {}).setdefault(iid, {})[key] = {
+                "n": n, "above": (won - exp) / n, "margin": 1.96 * (max(0.01, p * (1 - p)) / n) ** 0.5}
+            continue
         out["groups"].setdefault(g, {}).setdefault(iid, {})[key] = {
             "n": n, "expected": exp / n, "actual": p, "above": (won - exp) / n,
             "margin": 1.96 * (max(0.01, p * (1 - p)) / n) ** 0.5}
@@ -84,13 +89,23 @@ def build(cache: str = ".cache", store_name: str = "winprob_matches_v3.jsonl") -
 _CACHE = None
 
 
-def value(group: str, item_id: int | str, first: bool):
-    """(wins above expected, margin, n) for this item in this situation, or None."""
+MIN_HERO_N = 800
+
+
+def value(group: str, item_id: int | str, first: bool, hero_id: int | None = None):
+    """(wins above expected, margin, n, for this hero?) for this item in this situation, or None.
+    Uses purchases by your hero when there are enough (an item can work very differently per hero:
+    Silencer on Haze is +2.7 as the team's first crowd control, about 0 averaged over all heroes)."""
     global _CACHE
     if _CACHE is None:
         _CACHE = json.loads(OUT.read_text()) if OUT.exists() else {}
-    row = ((_CACHE.get("groups", {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get("first" if first else "dup")
-    return (row["above"], row["margin"], row["n"]) if row else None
+    key = "first" if first else "dup"
+    if hero_id is not None:
+        row = (((_CACHE.get("by_hero", {}).get(str(hero_id), {}) or {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
+        if row and row["n"] >= MIN_HERO_N:
+            return row["above"], row["margin"], row["n"], True
+    row = ((_CACHE.get("groups", {}).get(group, {}) or {}).get(str(item_id), {}) or {}).get(key)
+    return (row["above"], row["margin"], row["n"], False) if row else None
 
 
 def main(argv=None) -> int:

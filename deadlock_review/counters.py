@@ -556,9 +556,9 @@ def _covered_and_top(m: Match, p: Player, needs: list[Need], role, raw_groups, a
         for i in n.items:
             grp = SITUATION_GROUP.get(n.key) or next((g for g in ("silence", "disarm", "stun")
                                                       if i in raw_groups.get(g, [])), None)
-            v = sit_value(grp, i["id"], n.situation in ("first", "own_first")) if grp else None
+            v = sit_value(grp, i["id"], n.situation in ("first", "own_first"), p.hero_id) if grp else None
             if v:
-                n.value[i["id"]] = (v[0], v[1], v[2], False, n.situation)
+                n.value[i["id"]] = (v[0], v[1], v[2], v[3], n.situation)
             else:
                 v = item_value_for(i["id"], p.hero_id)
                 if v:
