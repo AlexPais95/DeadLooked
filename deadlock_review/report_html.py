@@ -829,7 +829,8 @@ def _counters(m: Match, p, needs, role=None) -> str:
                 when = {"first": "as the first on your team", "dup": "with one already on your team",
                         "own_first": "as your first resist item", "any": ""}[sit]
                 src = (f"{E(p.hero)} data" if isinstance(v[3], float) and v[3] >= 0.5 else "all heroes")
-                vtxt = (f"{100 * v[0]:+.1f} wins/100" if clear else "no clear effect") + (f"<br>{when}" if when else "") + f"<br>({src})"
+                vtxt = (f"{100 * v[0]:+.1f} ±{100 * v[1]:.1f} wins/100" + ("" if clear else "<br>within the noise")
+                        + (f"<br>{when}" if when else "") + f"<br>({src})")
                 val = (f'<span class="val {vcls}" title="Teams that bought it {when + " " if when else ""}won {100 * v[0]:+.1f} games per 100 '
                        f'compared with their chance of winning when it was bought (±{100 * v[1]:.1f}; '
                        + (f'{v[2]:,} top-tier purchases by {E(p.hero)} players, {v[3]:.0%} of the number, the rest from all heroes'
