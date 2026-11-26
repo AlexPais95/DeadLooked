@@ -32,7 +32,7 @@ METRICS = {
     # rotations (None = style measure: shown for comparison, never flagged)
     "needed_present": ("Where you were needed: at the fight/objective", True),
     "needed_farming": ("Where you were needed: farming 100 m+ away", False),
-    "fight_arrival_s": ("Seconds late to fights (median)", False),
+    "fight_arrival_s": ("Seconds to reach fights you rotated to (median)", False),
     "objectives_defended": ("Own objectives lost: you were there", True),
     "objectives_taken_present": ("Enemy objectives taken: you were there", True),
     "lane_ganks": ("Kills in other lanes before 10:00", True),

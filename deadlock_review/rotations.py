@@ -92,8 +92,8 @@ def lane_changes(p: Player, start: int, end: int) -> int:
 
 
 def fight_arrivals(m: Match, p: Player, fights) -> list[float]:
-    """Seconds after a fight's first death before you got within 40 m of it
-    (fights you were alive for and reached; 0 = already there)."""
+    """For fights you had to travel to (60 m+ away 10 s before the first death) and reached:
+    seconds from then until you got within 40 m."""
     out = []
     for f in fights:
         t0 = f.deaths[0][0]
@@ -102,10 +102,13 @@ def fight_arrivals(m: Match, p: Player, fights) -> list[float]:
         spots = [pos for (_, pos) in _death_spots(m, f)]
         if not spots:
             continue
-        for s in range(int(t0) - 15, int(f.end) + 1):
+        start = p.at(t0 - 10, tol=1)
+        if not start or min(dist_m(start, x) for x in spots) <= AT_NEED_M:
+            continue  # already at the fight: not a rotation
+        for s in range(int(t0) - 10, int(f.end) + 1):
             me = p.at(s, tol=0)
             if me and me[3] and min(dist_m(me, x) for x in spots) <= ARRIVED_M:
-                out.append(max(0.0, s - t0))
+                out.append(s - (t0 - 10))
                 break
     return out
 

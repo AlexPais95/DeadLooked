@@ -40,7 +40,7 @@ cached in `.cache/`, so re-running a report is free.
 - **Rotations:**
   - *Being where you're needed:* every 5 s after 10:00, finds where your team needed help (a teammate trading damage with enemy heroes within 30 m, or 2+ enemies at one of your objectives) and whether you were there (within 60 m), fighting somewhere else, or farming 100 m+ away. Farming stretches that cost a teammate's life or an objective are flagged
   - *Objectives:* for every objective that fell (positions from the replay's `BossKilledEvent`), whether you got within 40 m in the 15 s before; own objectives lost while you were alive, 100 m+ away and not fighting are flagged
-  - *Fight arrival:* seconds after a fight's first death before you reached it
+  - *Fight arrival:* for fights you had to travel to (60 m+ away 10 s before the first death), seconds until you got there
   - *Laning phase:* kills you were in on in other lanes before 10:00 (ganks), and time spent outside your lane; lanes are the three columns of the map at x = -7500 / 0 / +7500
 - 3+ deaths before 10:00
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
