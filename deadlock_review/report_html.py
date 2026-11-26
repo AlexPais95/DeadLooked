@@ -108,9 +108,10 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .cmp { display: grid; gap: 22px; }
 .cmp-group { display: grid; gap: 2px; }
 .cmp-group h3 { margin-bottom: 6px; color: var(--brass); }
-.cmp-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 5.5rem minmax(140px, 1.6fr) 6.5rem; gap: 14px; align-items: center;
+.cmp-row { display: grid; grid-template-columns: minmax(0, 1.5fr) 5.5rem minmax(140px, 1.6fr) 8.5rem; gap: 14px; align-items: center;
   padding: 8px 0; border-top: 1px solid var(--line); }
 .cmp-row .lab { min-width: 0; } .cmp-row .lab small { display: block; color: var(--muted); font-size: .78rem; }
+.cmp-row .lab small.explain { color: var(--fg); opacity: .8; margin-top: 2px; }
 .cmp-row .you { font: 600 1rem var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 .track { position: relative; height: 14px; border-radius: 7px; background: linear-gradient(90deg,
   color-mix(in srgb, var(--bad) 28%, transparent) 0 20%, var(--raise) 20% 80%, color-mix(in srgb, var(--good) 28%, transparent) 80% 100%); }
@@ -118,11 +119,12 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .track::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); opacity: .6; }
 .track i { position: absolute; top: 50%; box-sizing: border-box; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--bg); }
 .pill { font: 600 .72rem/1 var(--mono); letter-spacing: .04em; padding: 5px 7px; border-radius: 4px; text-align: center; white-space: nowrap; }
+.cmp-row .pill { justify-self: end; max-width: 100%; }
 .pill.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
 .pill.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
 .pill.mid { background: var(--raise); color: var(--muted); }
 .pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
-@media (max-width: 640px) { .cmp-row { grid-template-columns: minmax(0, 1fr) 5rem; }
+@media (max-width: 640px) { .cmp-row { grid-template-columns: minmax(0, 1fr) auto; }
   .cmp-row .track { grid-column: 1 / -1; } .cmp-row .pill { grid-column: 2; grid-row: 1; justify-self: end; }
   .cmp-row .you { grid-column: 1; grid-row: 1; display: none; } }
 
@@ -347,6 +349,12 @@ def _map(m: Match, p) -> str:
 
 
 # --------------------------------------------------------------- comparison
+STYLE_NOTES = {
+    "lane_changes_per10": "How often you moved to a different lane and stayed there 20 s or more.",
+    "lane_time_away": "Share of the laning phase you spent outside your own lane (roaming, ganking, camps).",
+}
+
+
 def _comparison(rows: list[dict], hero: str) -> str:
     by = {r["key"]: r for r in rows}
     out = ['<div class="cmp">']
@@ -359,7 +367,8 @@ def _comparison(rows: list[dict], hero: str) -> str:
             bt, style = r["better_than"], r["better_than"] is None
             pos = r["pct"] if style else bt
             if style:
-                pill, col = f'<span class="pill mid">style</span>', "var(--muted)"
+                word = "less than most" if pos < 0.25 else ("more than most" if pos > 0.75 else "typical")
+                pill, col = f'<span class="pill mid">{word}</span>', "var(--muted)"
             elif bt < 0.2:
                 pill, col = f'<span class="pill bad">worse than {1 - bt:.0%}</span>', "var(--bad)"
             elif bt >= 0.8:
@@ -367,7 +376,9 @@ def _comparison(rows: list[dict], hero: str) -> str:
             else:
                 pill, col = f'<span class="pill mid">better than {bt:.0%}</span>', "var(--brass)"
             out.append(
-                f'<div class="cmp-row"><div class="lab">{E(r["label"])}<small>top-tier median {_fmt_val(r["key"], r["p50"])}'
+                f'<div class="cmp-row"><div class="lab">{E(r["label"])}'
+                + (f'<small class="explain">{E(STYLE_NOTES.get(r["key"], ""))} Playstyle: no right or wrong value, shown for comparison.</small>' if style else "")
+                + f'<small>top-tier median {_fmt_val(r["key"], r["p50"])}'
                 f' · middle half {_fmt_val(r["key"], r["p25"])}–{_fmt_val(r["key"], r["p75"])}</small></div>'
                 f'<div class="you">{_fmt_val(r["key"], r["you"])}</div>'
                 f'<div class="track{" style" if style else ""}" title="{"higher than" if style else "better than"} {pos:.0%} of top-tier {E(hero)} games">'
@@ -628,7 +639,8 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
         L.append(f'<section><div class="sec-head"><span class="eyebrow">You vs {n_games} top-tier {E(p.hero)} games</span>'
                  '<h2>How you compare</h2><p>The dot shows the share of top-tier games you beat on each measure: '
                  'the left fifth is flagged, the right fifth means top-tier. The centre line is their median. '
-                 '"Style" measures show where you sit without judging it.</p></div>'
+                 'Grey dots are playstyle measures with no right or wrong value: they show where you sit '
+                 '(fewer, typical or more than top players) without judging it.</p></div>'
                  + _comparison(base, p.hero) + "</section>")
 
     # fights + objectives

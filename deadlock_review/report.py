@@ -156,7 +156,7 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             share = r["key"] in PERCENT_KEYS
             f = (lambda v: f"{v:.0%}") if share else (lambda v: f"{v:,.2f}" if abs(v) < 10 else f"{v:,.0f}")
             if r["better_than"] is None:
-                cell = f"style: higher than {r['pct']:.0%} of them"
+                cell = f"playstyle, not judged: higher than {r['pct']:.0%} of them"
             else:
                 flag = " ⚠" if r["better_than"] < 0.2 else (" ✅" if r["better_than"] >= 0.8 else "")
                 cell = f"{r['better_than']:.0%}{flag}"
