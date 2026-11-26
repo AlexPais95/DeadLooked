@@ -116,7 +116,7 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
   color-mix(in srgb, var(--bad) 28%, transparent) 0 20%, var(--raise) 20% 80%, color-mix(in srgb, var(--good) 28%, transparent) 80% 100%); }
 .track.style { background: var(--raise); }
 .track::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); opacity: .6; }
-.track i { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid var(--bg); }
+.track i { position: absolute; top: 50%; box-sizing: border-box; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--bg); }
 .pill { font: 600 .72rem/1 var(--mono); letter-spacing: .04em; padding: 5px 7px; border-radius: 4px; text-align: center; white-space: nowrap; }
 .pill.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
 .pill.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
