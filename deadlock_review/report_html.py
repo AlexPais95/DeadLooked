@@ -126,6 +126,38 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
   .cmp-row .track { grid-column: 1 / -1; } .cmp-row .pill { grid-column: 2; grid-row: 1; justify-self: end; }
   .cmp-row .you { grid-column: 1; grid-row: 1; display: none; } }
 
+/* fights */
+.fsum { display: flex; flex-wrap: wrap; gap: 12px 40px; }
+.fsum div { display: grid; gap: 2px; }
+.fsum b { font: 600 1.8rem/1 var(--mono); } .fsum b small { font-size: 1.1rem; color: var(--muted); }
+.fsum span { font: 500 .7rem/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.fights { display: grid; gap: 6px; }
+.fight { display: grid; grid-template-columns: 5.5rem 8.5rem minmax(0, 1fr) 11rem; gap: 6px 18px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 6px; padding: 10px 14px; }
+.fight.won { border-left-color: var(--good); } .fight.lost { border-left-color: var(--bad); }
+.f-when { display: grid; gap: 4px; } .f-when b { font-size: 1.05rem; }
+.res { font: 600 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.res.won { color: var(--good); } .res.lost { color: var(--bad); } .res.even { color: var(--muted); }
+.pips { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.pips i { width: 8px; height: 8px; border-radius: 50%; }
+.pips em { font-style: normal; font-size: .82rem; color: var(--fg); margin: 0 6px; }
+.f-bar { min-width: 0; display: grid; gap: 3px; }
+.tug { position: relative; height: 12px; border-radius: 6px; overflow: hidden; background: var(--raise); }
+.tug i { position: absolute; top: 0; bottom: 0; }
+.tug .ours { left: 0; opacity: .85; } .tug .theirs { opacity: .55; }
+.tug .you { left: 0; z-index: 1; background: repeating-linear-gradient(135deg, var(--fg) 0 2px, transparent 2px 5px);
+  box-shadow: inset 0 0 0 1.5px var(--fg); border-radius: 6px 0 0 6px; }
+.legend i.hatch { background: repeating-linear-gradient(135deg, var(--fg) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--fg); }
+.tug .souls { width: 2px; margin-left: -1px; background: var(--fg); z-index: 2; }
+.tug-lab { display: flex; justify-content: space-between; font: .7rem var(--mono); color: var(--muted); }
+.f-you { display: grid; gap: 2px; justify-items: start; }
+.rate { font-size: .85rem; } .rate b { font-size: 1rem; }
+.rate.low b, .rate.low { color: var(--bad); } .rate.high b { color: var(--good); } .rate.ok b { color: var(--brass); }
+.rate.none { color: var(--muted); font-style: italic; }
+.you-sub { font-size: .72rem; }
+@media (max-width: 720px) { .fight { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  .fight .pips { grid-column: 2; grid-row: 1; justify-self: end; } .f-bar { grid-column: 1 / -1; } .f-you { grid-column: 1 / -1; } }
+
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: .88rem; }
@@ -331,33 +363,65 @@ def _verdict(rows: list[dict]) -> tuple[list[str], list[str]]:
 
 
 # ------------------------------------------------------------------- fights
-def _fights_table(m: Match, p, fights, extras) -> str:
-    rows = {id(r.fight): r for r in (extras.get("fight_damage") or []) if r.player.slot == p.slot}
-    out = ['<div class="tbl"><table><thead><tr><th>Fight</th><th>Result</th><th class="num">Deaths you / them</th>'
-           '<th class="num">You in fight</th><th class="num">Your damage</th><th>Vs expected</th></tr></thead><tbody>']
+def _fights(m: Match, p, fights, extras) -> str:
+    """Summary strip, then one row per fight: result, kills/deaths, a tug-of-war bar of each
+    team's damage (your own part highlighted, souls share marked) and your rating."""
+    rows = extras.get("fight_damage") or []
+    team_dmg = {(id(ff), team): (dmg, share) for ff, team, dmg, share in (extras.get("team_damage") or [])}
+    me_by_fight = {id(r.fight): r for r in rows if r.player.slot == p.slot}
+    won = sum(1 for f in fights if f.winner == p.team)
+    lost = sum(1 for f in fights if f.winner is not None and f.winner != p.team)
+    attended = [r for r in me_by_fight.values() if r.present_s > 0 or r.damage > 0]
+    ratios = [r.ratio for r in attended if r.ratio is not None]
+    med = statistics.median(ratios) if ratios else None
+    me_col, them_col = _team_var(p.team), _team_var(1 - p.team)
+
+    out = ['<div class="fsum">',
+           f'<div><b class="num">{won}<small>–{lost}</small></b><span>Fights won–lost'
+           f'{f" · {len(fights) - won - lost} even" if len(fights) - won - lost else ""}</span></div>',
+           f'<div><b class="num">{len(attended)}<small>/{len(fights)}</small></b><span>Fights you were in</span></div>',
+           f'<div><b class="num">{"—" if med is None else f"{med:.0%}"}</b><span>Your damage vs expected (median)</span></div>',
+           '</div><div class="fights">']
     for f in fights:
-        r = rows.get(id(f))
-        if f.winner is None:
-            res = '<span class="pill mid">even</span>'
-        elif f.winner == p.team:
-            res = '<span class="pill good">won</span>'
+        k, d = f.losses.get(1 - p.team, 0), f.losses.get(p.team, 0)
+        res, cls = ("Even", "even") if f.winner is None else (("Won", "won") if f.winner == p.team else ("Lost", "lost"))
+        mine_t, theirs_t = team_dmg.get((id(f), p.team)), team_dmg.get((id(f), 1 - p.team))
+        r = me_by_fight.get(id(f))
+        # tug of war
+        if mine_t and theirs_t and (mine_t[0] + theirs_t[0]) > 0:
+            tot = mine_t[0] + theirs_t[0]
+            ours = mine_t[0] / tot * 100
+            you = (r.damage / tot * 100) if r else 0
+            souls = mine_t[1] * 100
+            bar = (f'<div class="tug" title="Your team {mine_t[0]:,} damage ({ours:.0f}%), enemy {theirs_t[0]:,}. '
+                   f'Your team had {souls:.0f}% of the souls.">'
+                   f'<i class="ours" style="width:{ours:.1f}%;background:{me_col}"></i>'
+                   f'<i class="you" style="width:{you:.1f}%"></i>'
+                   f'<i class="theirs" style="left:{ours:.1f}%;width:{100 - ours:.1f}%;background:{them_col}"></i>'
+                   f'<i class="souls" style="left:{souls:.1f}%"></i></div>'
+                   f'<div class="tug-lab"><span>{ours:.0f}% of damage</span><span>{100 - ours:.0f}%</span></div>')
         else:
-            res = '<span class="pill bad">lost</span>'
-        mine, theirs = f.losses.get(p.team, 0), f.losses.get(1 - p.team, 0)
+            bar = '<div class="tug empty"></div><div class="tug-lab"><span class="muted">no damage data</span></div>'
+        # you
         if not r or (r.present_s == 0 and r.damage == 0):
-            pres, dmg, rat = '<span class="muted">not there</span>', "—", '<span class="muted">—</span>'
+            you_html = '<span class="rate none">not there</span>'
+        elif r.ratio is None:
+            you_html = f'<span class="rate none">{r.damage:,} dmg · too short</span>'
         else:
-            pres, dmg = f"{r.present_s} s", f"{r.damage:,}"
-            if r.ratio is None:
-                rat = '<span class="muted">too short</span>'
-            else:
-                col = "var(--bad)" if r.ratio < 0.5 else ("var(--good)" if r.ratio >= 1.6 else "var(--brass)")
-                w = min(100, r.ratio / 2 * 100)
-                rat = (f'<span class="ratio"><span class="bar"><i style="width:{w:.0f}%;background:{col}"></i></span>'
-                       f'<span class="num">{r.ratio:.0%}</span></span>')
-        out.append(f'<tr><td class="num">{fmt_t(f.deaths[0][0])}</td><td>{res}</td><td class="num">{mine} / {theirs}</td>'
-                   f'<td class="num">{pres}</td><td class="num">{dmg}</td><td>{rat}</td></tr>')
-    out.append("</tbody></table></div>")
+            rc = "low" if r.ratio < 0.5 else ("high" if r.ratio >= 1.6 else "ok")
+            you_html = (f'<span class="rate {rc}"><b class="num">{r.ratio:.0%}</b> of expected</span>'
+                        f'<span class="muted num you-sub">{r.damage:,} dmg · {r.present_s}s in fight</span>')
+        pips = ('<span class="pips" title="Enemies killed / your team\'s deaths">'
+                + "".join(f'<i style="background:{them_col}"></i>' for _ in range(k))
+                + '<em class="num">' + f"{k}–{d}" + "</em>"
+                + "".join(f'<i style="background:{me_col}"></i>' for _ in range(d)) + "</span>")
+        out.append(f'<div class="fight {cls}"><div class="f-when"><b class="num">{fmt_t(f.deaths[0][0])}</b>'
+                   f'<span class="res {cls}">{res}</span></div>{pips}<div class="f-bar">{bar}</div>'
+                   f'<div class="f-you">{you_html}</div></div>')
+    out.append('</div><div class="legend"><span><i class="hatch"></i>your own damage (inside your team&#39;s bar)</span>'
+               f'<span><i style="background:{me_col}"></i>your team</span><span><i style="background:{them_col}"></i>enemy team</span>'
+               '<span><i style="background:var(--fg)"></i>tick: your team\'s share of souls (even fight = damage meets the tick)</span>'
+               '<span>dots: enemies killed – your team\'s deaths</span></div>')
     return "".join(out)
 
 
@@ -468,7 +532,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     if fights:
         L.append('<section><div class="sec-head"><span class="eyebrow">Damage to enemy heroes vs what your hero, souls and time in the fight predict</span>'
                  '<h2>Team fights</h2><p>Perfect fights don\'t exist: under 50% of expected is flagged, 160% and up is excellent.</p></div>'
-                 + _fights_table(m, p, fights, extras) + "</section>")
+                 + _fights(m, p, fights, extras) + "</section>")
     visits = (extras.get("objectives") or {}).get(p.slot)
     if visits:
         L.append('<section><div class="sec-head"><span class="eyebrow">Rotations</span><h2>Objectives</h2>'
