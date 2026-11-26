@@ -194,9 +194,13 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* hero faces */
-.faces { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0 2px; grid-column: 2; }
-.faces .side { display: inline-flex; flex-wrap: wrap; gap: inherit; align-items: center; }
-.faces .vs { font: 600 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 2px; }
+.faces { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 6px 0 4px; grid-column: 2;
+  border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.faces .half { display: grid; gap: 6px; align-content: start; padding: 7px 10px 9px; min-width: 0; }
+.faces .half.mine { background: color-mix(in srgb, var(--c-mine) 10%, transparent); }
+.faces .half.theirs { background: color-mix(in srgb, var(--c-theirs) 10%, transparent); border-left: 1px solid var(--line); }
+.faces .half-lab { font: 600 .62rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.faces .side { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .faces .nobody { font-size: .78rem; color: var(--muted); font-style: italic; }
 .face { position: relative; width: 32px; height: 32px; flex: none; display: inline-block; --c: var(--muted); }
 .face.t0 { --c: var(--amber); } .face.t1 { --c: var(--sapphire); }
@@ -212,7 +216,8 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .face.mini.me i { box-shadow: 0 0 0 2px var(--c), 0 0 0 4px var(--brass); }
 .face.mini.dead::after { width: 11px; height: 11px; right: -4px; bottom: -4px; background-size: 7px; border-width: 1.5px; }
 .faces-key { margin-top: 4px; }
-.obj .faces { grid-column: auto; margin: 6px 0 4px; gap: 6px; }
+.obj .faces { grid-column: auto; margin: 6px 0 4px; }
+.obj .faces .side { gap: 6px; }
 .obj .face { width: 26px; height: 26px; }
 
 /* tables */
@@ -636,9 +641,10 @@ def _faces(people, my_team: int) -> str:
                 f'role="img" aria-label="{E(label)}"><i class="h-{_slug(h)}"></i></span>')
     ours = [x for x in people if x[1] == my_team]
     theirs = [x for x in people if x[1] != my_team]
-    side = lambda xs: ('<span class="side">' + ("".join(face(*x) for x in xs) or '<span class="nobody">nobody</span>')
-                       + "</span>")
-    out = ['<div class="faces">', side(ours), '<span class="vs">vs</span>', side(theirs), "</div>"]
+    def half(xs, label, cls):
+        body = "".join(face(*x) for x in xs)  # nobody there: the half stays empty
+        return f'<div class="half {cls}"><span class="half-lab">{label}</span><div class="side">{body}</div></div>'
+    out = ['<div class="faces">', half(ours, "Your team", "mine"), half(theirs, "Enemy", "theirs"), "</div>"]
     return "".join(out)
 
 
@@ -681,7 +687,8 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     max_imp = max((f.impact for f in bad[:top_n]), default=1)
 
     L = [f"<title>{E(p.hero)} · Match {m.match_id}</title>",
-         '<meta name="claude:viewport-fit-sides" content="cover">', FONTS, f"<style>{CSS}{_portrait_css(m)}</style>", '<div class="wrap">']
+         '<meta name="claude:viewport-fit-sides" content="cover">', FONTS, f"<style>{CSS}{_portrait_css(m)}</style>",
+         f'<div class="wrap" style="--c-mine:{_team_var(p.team)};--c-theirs:{_team_var(1 - p.team)}">']
 
     # hero
     L.append(f'<header class="hero"><span class="eyebrow">Match {m.match_id} · {fmt_t(m.duration)} · '
