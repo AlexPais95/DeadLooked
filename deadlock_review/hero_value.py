@@ -140,7 +140,10 @@ def run(cache: str, store_name: str = "winprob_matches_v3.jsonl", min_games: int
     names = {h["id"]: h["name"] for h in Api(cache, verbose=False).heroes()}
     w = np.array([games[h] for h in heroes], dtype=float)
 
-    out = {"matches": len(matches), "brier": briers, "heroes": {}}
+    out = {"matches": len(matches), "brier": briers, "heroes": {},
+           # the fitted model, used by wpa.py: base terms (BASE_KEEP of winprob._terms), souls on other heroes
+           # (+ x time), then per hero: present, present x time, souls/1k, souls/1k x time
+           "model": {"hero_ids": heroes, "base_keep": list(BASE_KEEP), "coef": [float(v) for v in b]}}
     for label, minute in (("early", 10), ("mid", 20), ("late", 35)):
         tn = minute * 60 / 1800
         coefs = np.array([b[nb + 4 * i + 2] + b[nb + 4 * i + 3] * tn for i in range(len(heroes))])

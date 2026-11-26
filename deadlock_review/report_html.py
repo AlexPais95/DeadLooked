@@ -893,7 +893,7 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
              '<p>Your team\'s chance of winning, then the soul difference with every fight, your ultimates and their cooldowns, '
              'your deaths and every objective that fell. Hover any mark for details.</p></div>'
              + (f'<h3 class="chart-title">Your team\'s chance of winning</h3><div class="chart">{_wp_chart(m, p, extras["wp"])}</div>'
-                f'<p class="muted note">From a win probability model fitted on {_wp_matches():,} recent top-tier matches: soul lead, '
+                f'<p class="muted note">From a win probability model fitted on {_wp_matches():,} recent top-tier matches: souls (valued per hero), how strong each hero is, '
                 'objectives taken and lost (Guardians, Walkers, Base Guardians, Shrines, the Patron&#39;s first phase) and heroes alive. Dots mark the biggest swings.</p>'
                 '<h3 class="chart-title">Souls and events</h3>' if extras.get("wp") else "")
              + f'<div class="chart">{_timeline(m, p, fights, extras)}</div>'

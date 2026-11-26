@@ -33,6 +33,7 @@ DEATH_AFTER_S = 45
 class MatchWP:
     def __init__(self, m: Match, model: dict):
         self.m, self.model = m, model
+        self.hero_model = _hero_model()
         self.objectives = [(o["destroyed_time_s"], o["team"], TIER_BY_ID.get(o.get("team_objective_id")))
                            for o in m.meta.get("objectives", []) if o.get("destroyed_time_s")]
         self.objectives = [o for o in self.objectives if o[2]]
@@ -48,13 +49,50 @@ class MatchWP:
     def wp(self, team: int, t: float) -> float:
         t = max(0.0, min(float(self.m.duration), t))
         lead = (self.m.team_networth(team, int(t)) - self.m.team_networth(1 - team, int(t))) / 1000
-        return win_prob_x(self.model, t, features(lead, self.objectives, team, t, self.alive_diff(team, t)))
+        x = features(lead, self.objectives, team, t, self.alive_diff(team, t))
+        if self.hero_model:
+            return self._wp_heroes(team, t, x)
+        return win_prob_x(self.model, t, x)
+
+    def _wp_heroes(self, team: int, t: float, x) -> float:
+        """Same game state, but souls valued per hero and each hero's strength over time
+        (hero_value.py, fitted on 40,000 top-tier matches)."""
+        from .winprob import _terms
+        hm = self.hero_model
+        tn = t / 1800
+        full = _terms(t, x)
+        row = [full[i] for i in hm["base_keep"]]
+        col = {h: i for i, h in enumerate(hm["hero_ids"])}
+        other = 0.0
+        extra = [0.0] * (4 * len(hm["hero_ids"]))
+        for q in self.m.players.values():
+            sign = 1 if q.team == team else -1
+            v = sign * self.m.networth_at(q, t) / 1000
+            i = col.get(q.hero_id)
+            if i is None:
+                other += v
+                continue
+            extra[4 * i] += sign
+            extra[4 * i + 1] += sign * tn
+            extra[4 * i + 2] += v
+            extra[4 * i + 3] += v * tn
+        z = sum(b * v for b, v in zip(hm["coef"], row + [other, other * tn] + extra))
+        return 1 / (1 + math.exp(-max(-30.0, min(30.0, z))))
 
     def swing(self, team: int, t0: float, t1: float) -> float:
         return self.wp(team, t1) - self.wp(team, t0)
 
     def curve(self, team: int, step: int = 10) -> list[tuple[int, float]]:
         return [(t, self.wp(team, t)) for t in range(0, self.m.duration + 1, step)]
+
+
+def _hero_model() -> dict | None:
+    import json
+    from pathlib import Path
+    p = Path("baselines/hero_soul_value.json")
+    if not p.exists():
+        return None
+    return (json.loads(p.read_text()) or {}).get("model")
 
 
 def load_model() -> dict | None:

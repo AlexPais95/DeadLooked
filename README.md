@@ -136,6 +136,24 @@ this match's ratio between impact and measured swings, and marked as estimates. 
 win-chance chart with the biggest swings and each fight's swing. Limits: the model knows souls, objectives and heroes alive but not items, ultimates ready or positions;
 near the end of a game the win chance is close to 100%, so late plays show small numbers.
 
+## Value of a soul per hero
+
+```bash
+python -m deadlock_review.winprob --matches 40000 --days 21
+python -m deadlock_review.hero_value --min-games 1500
+```
+
+Is 5k souls on a support worth as much as 5k on a carry? Split by role (carry / frontliner / support)
+the answer was no difference, but per hero it differs. `hero_value.py` extends the win model with,
+per hero, how strong the hero is over the game (being in it, early and late) and what souls on that
+hero are worth, pulled towards average unless the data says otherwise, with 95% margins.
+
+Held-out check on 40,000 Phantom+ matches (Brier, lower is better): one soul value 0.1814; + hero
+strength 0.1713; + per-hero soul values 0.1710. Both help, so the report's win chance uses this model
+(`baselines/hero_soul_value.json`). Late game (35 min), souls are worth about 1.3-1.5x average on
+Victor, Vindicta, Pocket and Kelvin and about 0.5-0.7x on The Doorman, Dynamo, Abrams and Apollo, whose
+power comes more from abilities than from items.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).
