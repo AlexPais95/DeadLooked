@@ -82,6 +82,7 @@ section { display: grid; gap: 16px; min-width: 0; }
 .chart svg { display: block; width: 100%; min-width: 640px; height: auto; }
 .chart svg text { fill: var(--muted); font: 11px var(--mono); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .82rem; color: var(--muted); }
+.legend svg.key, .chart .legend svg.key, .map .legend svg.key { display: inline-block; width: 14px; height: 14px; min-width: 0; max-width: none; margin: 0 6px 0 0; vertical-align: -2px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 @media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
@@ -296,6 +297,17 @@ def _timeline(m: Match, p, fights, extras) -> str:
 
 
 # ----------------------------------------------------------------------- map
+def _key(kind: str, col: str = "") -> str:
+    """Legend symbol drawn the same way as on the map."""
+    body = {
+        "death": '<path d="M3,3 L11,11 M11,3 L3,11" stroke="var(--bad)" stroke-width="2.6" stroke-linecap="round"/>',
+        "kill": '<circle cx="7" cy="7" r="4.5" fill="var(--good)"/>',
+        "obj": f'<rect x="2" y="2" width="10" height="10" fill="{col}" stroke="{col}" stroke-width="2"/>',
+        "dead": f'<rect x="2" y="2" width="10" height="10" fill="var(--bg)" stroke="{col}" stroke-width="2"/>',
+    }[kind]
+    return f'<svg class="key" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">{body}</svg>'
+
+
 def _map(m: Match, p) -> str:
     """Your deaths, kills and every objective on the real minimap (from the assets API).
     Map coordinates: left = 0.5 + x / 2R, top = 0.5 - y / 2R, so team 0's base is at the bottom."""
@@ -623,9 +635,10 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     L.append("</ol>")
     if m.replay_ok:
         L.append('<div class="chart map">' + _map(m, p) + '<div class="legend" style="margin-top:8px">'
-                 '<span><i style="background:var(--bad)"></i>your deaths</span><span><i style="background:var(--good)"></i>your kills</span>'
-                 f'<span><i style="background:{_team_var(p.team)}"></i>your objectives</span>'
-                 f'<span><i style="background:{_team_var(1 - p.team)}"></i>enemy objectives (hollow = destroyed)</span></div></div>')
+                 f'<span>{_key("death")}your deaths</span><span>{_key("kill")}your kills</span>'
+                 f'<span>{_key("obj", _team_var(p.team))}your objectives</span>'
+                 f'<span>{_key("obj", _team_var(1 - p.team))}enemy objectives</span>'
+                 f'<span>{_key("dead", "var(--muted)")}destroyed objective</span></div></div>')
     L.append("</div>")
     if len(bad) > top_n:
         L.append(f'<p class="muted">{len(bad) - top_n} smaller issues are in the Markdown report.</p>')
