@@ -156,6 +156,86 @@ def ability_cooldown_at(m: Match, p: Player, cls: str, t: float) -> tuple[float 
     return max(1.0, base * mult), notes
 
 
+TICKS = 64
+
+
+def _ability_table(m: Match, cls: str) -> str | None:
+    """Replay table holding an ability's state, e.g. citadel_ability_void_sphere ->
+    CCitadel_Ability_VoidSphere (matched case- and underscore-insensitively against the schema)."""
+    try:
+        schema = m.api._get_json("/v1/matches/demo/schema", max_age=7 * 86400)
+    except Exception:
+        return None
+    tabs = schema if isinstance(schema, list) else schema.get("tables", [])
+    want = cls.lower().replace("citadel_ability_", "").replace("_", "")
+    for t in tabs:
+        name = t.get("name") if isinstance(t, dict) else t
+        if name and name.startswith("CCitadel_Ability_") and name[len("CCitadel_Ability_"):].lower() == want:
+            return name
+    return None
+
+
+def ability_cooldowns(m: Match, p: Player, cls: str, exact: bool = True) -> tuple[list[tuple[float, float]], str]:
+    """[(cast time, ready again)] for one ability, and where the numbers came from.
+
+    exact: read the ability's real cooldown from the replay (m_flCooldownStart/End), which includes
+    every effect (upgrades, items, imbues, refunds). Each cooldown is anchored to the tick it first
+    appears, because the replay's server clock drifts from the game clock (pauses).
+    Otherwise (or if that fails): logged casts + cooldown calculated from upgrades and items."""
+    if exact and m.replay_ok:
+        table = _ability_table(m, cls)
+        if table:
+            sql = (f'SELECT "m_hOwnerEntity" AS o, "m_flCooldownStart" AS s, "m_flCooldownEnd" AS e, MIN(tick) AS t0 '
+                   f'FROM {table} GROUP BY 1, 2, 3 ORDER BY 4')
+            try:
+                rows = m.api.demo_query(m.match_id, sql, f"cd_{cls}")
+                rows = [r for r in rows if ((r["o"] or 0) & 0x3FFF) == p.entity and r["s"] and r["e"] and r["e"] > r["s"]]
+                # A row is a new cast when the ability wasn't already on cooldown (or the cooldown start
+                # is "now", e.g. after Refresher); otherwise it updates the running cooldown's end.
+                windows: list[list[float]] = []   # [cast time, ready time, server start, clock offset, server end]
+                for r in sorted(rows, key=lambda r: r["t0"]):
+                    now = m.tick_to_t(r["t0"])
+                    offset = r["s"] - r["t0"] / TICKS
+                    cur = windows[-1] if windows else None
+                    running = cur is not None and cur[1] > now + 0.5
+                    if cur is not None and abs(r["s"] - cur[2]) < 12 and abs(r["e"] - cur[4]) < 12:
+                        # same cooldown re-sent (pauses and effects shift it): keep the earliest
+                        # ready time, so a pause doesn't make it look longer
+                        cur[1] = min(cur[1], cur[0] + (r["e"] - cur[2]))
+                    elif running and offset < cur[3] - 1.0:
+                        cur[1] = min(cur[1], now + (r["e"] - (r["t0"] / TICKS + cur[3])))
+                    else:
+                        cast = now - max(0.0, (r["t0"] / TICKS + offset) - r["s"])
+                        windows.append([cast, cast + (r["e"] - r["s"]), r["s"], offset, r["e"]])
+                if windows:
+                    return [(w[0], w[1]) for w in windows], "replay"
+            except Exception:
+                pass
+    casts = sorted(c.t for c in p.casts if c.ability == cls)
+    out = []
+    for t in casts:
+        cd, _ = ability_cooldown_at(m, p, cls, t)
+        out.append((t, t + (cd or 0)))
+    return out, "calculated"
+
+
+def ability_state_at(m: Match, p: Player, cls: str, t: float, windows) -> tuple[str, str]:
+    """('locked' | 'cooldown' | 'ready', explanation) for an ability at time t."""
+    name = m.items_by_class.get(cls, {}).get("name", cls)
+    unlock = next((tt for tt, cn in p.ability_ups if cn == cls), None)
+    if unlock is None or unlock > t:
+        return "locked", f"{name} wasn't unlocked yet"
+    prev = [w for w in windows if w[0] <= t]
+    if prev and prev[-1][1] > t:
+        cast, ready = prev[-1]
+        return "cooldown", f"{name} was on cooldown (used {fmt_t(cast)}, ready {fmt_t(ready)})"
+    if prev:
+        cast, ready = prev[-1]
+        return "ready", (f"{name} was ready for {t - ready:.0f}s and not used (last used {fmt_t(cast)}, "
+                         f"{ready - cast:.0f}s cooldown, ready again {fmt_t(ready)})")
+    return "ready", f"{name} was ready and not used (not cast since you unlocked it at {fmt_t(unlock)})"
+
+
 def ult_windows(m: Match, p: Player):
     """Casts of the ultimate and the windows when it was ready.
 
@@ -220,8 +300,12 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
         ult, casts, ready = ult_windows(m, p) if m.replay_ok else (None, [], [])
         ult_logged = bool(casts)
         esc = _slot_class(m, p, c.get("escape_slot"))
-        esc_casts = sorted(x.t for x in p.casts if x.ability == esc) if esc else []
-        esc_cd = _cooldown(m, esc) if esc else None
+        ult_exact = None
+        if ult and p.slot in focus_slots:
+            w, src = ability_cooldowns(m, p, ult, exact=True)
+            ult_exact = w if src == "replay" else None
+        esc_windows, esc_src = (ability_cooldowns(m, p, esc, exact=p.slot in focus_slots)
+                                if esc and m.replay_ok else ([], ""))
 
         # deaths
         for d in p.deaths:
@@ -252,13 +336,20 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
                 elif len(enemies) >= len(near_allies) + 2:
                     kind, impact = "outnumbered_death", impact + 1.0
                     title += f" outnumbered ({len(enemies)} enemies vs {len(near_allies) + 1})"
-                if esc_casts and esc_cd:
-                    last = max((t for t in esc_casts if t < d.t), default=None)
-                    if last is None or d.t - last > esc_cd + 2:
-                        extra.append(f"your escape ability ({m.items_by_class.get(esc, {}).get('name', esc)}) "
-                                     "was probably available and not used")
+                if esc and (esc_windows or esc_src == "replay"):
+                    state, why = ability_state_at(m, p, esc, d.t - 1, esc_windows)
+                    if state == "ready":
+                        sure = "" if esc_src == "replay" else " (calculated from logged casts)"
+                        extra.append(f"escape: {why}{sure}")
                         impact += 0.5
-                if ult_logged and _ready_at(ready, d.t) and c["ult_kind"] in ("aoe", "target"):
+                    elif state == "cooldown" and p.slot in focus_slots:
+                        extra.append(f"escape: {why}")
+                if ult_exact is not None and c["ult_kind"] in ("aoe", "target"):
+                    state, why = ability_state_at(m, p, ult, d.t - 1, ult_exact)
+                    if state == "ready":
+                        extra.append(f"ultimate: {why}")
+                        impact += 0.5
+                elif ult_logged and _ready_at(ready, d.t) and c["ult_kind"] in ("aoe", "target"):
                     extra.append("you died with your ultimate ready")
                     impact += 0.5
             findings.append(Finding(p.slot, p.team, d.t, kind, impact, title, "; ".join(extra)))

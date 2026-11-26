@@ -29,7 +29,7 @@ CSS = """
 /* Layout: one reading column; a wide match timeline and a map lead, details follow in cards. */
 :root {
   --bg: #111417; --surface: #181c20; --raise: #1f242a; --line: #2c333a;
-  --fg: #e9e6df; --muted: #9ba0a3; --brass: #d2ad62;
+  --fg: #e9e6df; --muted: #9ba0a3; --brass: #d2ad62; --street: #39414a;
   --amber: #ec9440; --sapphire: #5b97e6;
   --good: #63b882; --bad: #e86b5c; --warn: #d9b44a;
   --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
@@ -39,12 +39,12 @@ CSS = """
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
   --bg: #eceff2; --surface: #ffffff; --raise: #f5f7f9; --line: #d3d9df;
-  --fg: #191d21; --muted: #59616a; --brass: #87651e;
+  --fg: #191d21; --muted: #59616a; --brass: #87651e; --street: #c9d0d8;
   --amber: #c06612; --sapphire: #2b67bb;
   --good: #2c8650; --bad: #c13f2c; --warn: #9c760c; color-scheme: light; } }
 :root[data-theme="light"] {
   --bg: #eceff2; --surface: #ffffff; --raise: #f5f7f9; --line: #d3d9df;
-  --fg: #191d21; --muted: #59616a; --brass: #87651e;
+  --fg: #191d21; --muted: #59616a; --brass: #87651e; --street: #c9d0d8;
   --amber: #c06612; --sapphire: #2b67bb;
   --good: #2c8650; --bad: #c13f2c; --warn: #9c760c; color-scheme: light; }
 
@@ -85,7 +85,7 @@ section { display: grid; gap: 16px; min-width: 0; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 @media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
-.map svg { min-width: 0; max-width: 520px; margin: 0 auto; }
+.map svg { min-width: 0; max-width: 560px; margin: 0 auto; }
 
 /* mistakes */
 ol.mistakes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: m; }
@@ -239,22 +239,36 @@ def _timeline(m: Match, p, fights, extras) -> str:
 
 # ----------------------------------------------------------------------- map
 def _map(m: Match, p) -> str:
+    """Your deaths, kills and every objective on the real minimap (from the assets API).
+    Map coordinates: left = 0.5 + x / 2R, top = 0.5 - y / 2R, so team 0's base is at the bottom."""
+    import base64
     from .rotations import objective_spots
-    R = 10800
-    flip = -1 if p.team == 1 else 1          # your base at the bottom
-    S = 460
-    X = lambda x: S / 2 + (x * flip) / R * (S / 2)
-    Y = lambda y: S / 2 + (y * flip) / R * (S / 2)
-    s = [f'<svg viewBox="0 0 {S} {S}" role="img" aria-label="Map of your deaths, kills and objectives">',
-         f'<rect x="0" y="0" width="{S}" height="{S}" rx="8" fill="var(--raise)"/>']
-    for lx in (-7500, 0, 7500):
-        s.append(f'<line x1="{X(lx):.1f}" y1="{Y(-9600):.1f}" x2="{X(lx):.1f}" y2="{Y(9600):.1f}" stroke="var(--line)" stroke-width="14" stroke-linecap="round"/>')
-    s.append(f'<text x="{S / 2}" y="{S - 8}" text-anchor="middle">your base</text>'
-             f'<text x="{S / 2}" y="16" text-anchor="middle">enemy base</text>')
+    S = 520
+    try:
+        R, png = m.api.map_image()
+        img = base64.b64encode(png).decode()
+    except Exception:
+        R, img = 10752.0, None
+    X = lambda x: S * (0.5 + x / (2 * R))
+    Y = lambda y: S * (0.5 - y / (2 * R))
+    s = [f'<svg viewBox="0 0 {S} {S}" role="img" aria-label="Minimap with your deaths, kills and objectives">',
+         f'<rect x="0" y="0" width="{S}" height="{S}" rx="8" fill="var(--bg)"/>']
+    if img:
+        s.append(f'<mask id="streets" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="{S}" height="{S}">'
+                 f'<image href="data:image/png;base64,{img}" x="0" y="0" width="{S}" height="{S}"/></mask>'
+                 f'<rect x="0" y="0" width="{S}" height="{S}" fill="var(--street)" mask="url(#streets)"/>')
+    else:
+        for lx in (-7500, 0, 7500):
+            s.append(f'<line x1="{X(lx):.1f}" y1="{Y(-9600):.1f}" x2="{X(lx):.1f}" y2="{Y(9600):.1f}" '
+                     'stroke="var(--street)" stroke-width="14" stroke-linecap="round"/>')
+    for team, y in ((1, 16), (0, S - 8)):
+        name = TEAM_NAMES.get(team, f"team {team}").split(" (")[0]
+        who = "your base" if team == p.team else "enemy base"
+        s.append(f'<text x="10" y="{y}" style="fill:{_team_var(team)}">{E(name)} · {who}</text>')
     for owner, kind, pos, dead_t in objective_spots(m):
         x, y = X(pos[0]), Y(pos[1])
         col = _team_var(owner)
-        fill = "none" if dead_t != float("inf") else col
+        fill = "var(--bg)" if dead_t != float("inf") else col
         r = {"Guardian": 5, "Walker": 7, "Base Guardian": 4, "Shrine": 6, "Patron": 9}.get(kind, 5)
         when = f"destroyed {fmt_t(dead_t)}" if dead_t != float("inf") else "standing at the end"
         s.append(f'<rect x="{x - r:.1f}" y="{y - r:.1f}" width="{2 * r}" height="{2 * r}" fill="{fill}" stroke="{col}" stroke-width="2">'
@@ -262,16 +276,16 @@ def _map(m: Match, p) -> str:
     for q in m.players.values():
         for d in q.deaths:
             if d.killer_slot == p.slot and d.pos:
-                s.append(f'<circle cx="{X(d.pos[0]):.1f}" cy="{Y(d.pos[1]):.1f}" r="4.5" fill="var(--good)">'
+                s.append(f'<circle cx="{X(d.pos[0]):.1f}" cy="{Y(d.pos[1]):.1f}" r="5" fill="var(--good)" stroke="var(--bg)" stroke-width="1.5">'
                          f'<title>You killed {E(q.hero)} at {fmt_t(d.t)}</title></circle>')
     for d in p.deaths:
         if not d.pos:
             continue
         x, y = X(d.pos[0]), Y(d.pos[1])
-        s.append(f'<g stroke="var(--bad)" stroke-width="3" stroke-linecap="round"><title>You died at {fmt_t(d.t)}</title>'
-                 f'<line x1="{x - 6:.1f}" y1="{y - 6:.1f}" x2="{x + 6:.1f}" y2="{y + 6:.1f}"/>'
-                 f'<line x1="{x + 6:.1f}" y1="{y - 6:.1f}" x2="{x - 6:.1f}" y2="{y + 6:.1f}"/></g>'
-                 f'<text x="{x + 9:.1f}" y="{y + 4:.1f}" style="fill:var(--bad)">{fmt_t(d.t)}</text>')
+        s.append(f'<g stroke-linecap="round"><title>You died at {fmt_t(d.t)}</title>'
+                 f'<path d="M{x - 6:.1f},{y - 6:.1f} L{x + 6:.1f},{y + 6:.1f} M{x + 6:.1f},{y - 6:.1f} L{x - 6:.1f},{y + 6:.1f}" stroke="var(--bg)" stroke-width="6"/>'
+                 f'<path d="M{x - 6:.1f},{y - 6:.1f} L{x + 6:.1f},{y + 6:.1f} M{x + 6:.1f},{y - 6:.1f} L{x - 6:.1f},{y + 6:.1f}" stroke="var(--bad)" stroke-width="3"/></g>'
+                 f'<text x="{x + 9:.1f}" y="{y + 4:.1f}" style="fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-width:3px">{fmt_t(d.t)}</text>')
     s.append("</svg>")
     return "".join(s)
 

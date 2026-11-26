@@ -34,7 +34,7 @@ cached in `.cache/`, so re-running a report is free.
 - Soul difference over time
 
 **Each player**
-- Deaths: alone (no ally within 30 m), outnumbered, killed during an enemy ultimate, died with escape or ultimate available, objectives lost while dead
+- Deaths: alone (no ally within 30 m), outnumbered, killed during an enemy ultimate, objectives lost while dead, and whether your escape ability and ultimate were ready. For the reviewed player this reads each ability's real cooldown from the replay (`m_flCooldownStart`/`End`), which includes every upgrade, item, imbue and refund, and says when it was last used and when it came back ("Quantum Entanglement was ready for 152s and not used (last used 16:11, 19s cooldown)")
 - Missing a team fight (more than 60 m from every death in it), worse when the ultimate was ready
 - Ultimate quality: enemies caught, allies close enough to follow up, kills and losses in the next 15 s
 - **Team fight damage:** damage to enemy heroes in each fight compared with an *expected* share, so players are judged against teammates in the same fight. The expected share uses the hero's role (damage per soul for that hero across recent matches), souls at the time, and seconds the player was actually in the fight (alive, and within 60 m or trading damage). Under 50% is flagged, 160%+ is highlighted, and short appearances aren't judged
@@ -79,7 +79,7 @@ collected match (cached queries are free).
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).
 2. `match.py` lines everything up in game time:
-   - replay ticks are converted to game seconds by fitting kill ticks against the metadata death times,
+   - replay ticks are converted to game seconds by fitting kill ticks against the metadata death times, taking out pauses (the game clock stops during a pause while ticks keep running),
    - hero pawns are matched to players through their controller's hero ID,
    - positions use `cell * 512 - 32768 + vec` in game units (39.37 units ≈ 1 m),
    - ability casts come from `ImportantAbilityUsedEvent`.

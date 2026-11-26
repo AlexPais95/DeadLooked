@@ -106,6 +106,17 @@ class Api:
             params["min_average_badge"] = min_badge
         return self._get_json("/v1/analytics/hero-stats", params, max_age=DAY)
 
+    def map_image(self) -> tuple[float, bytes]:
+        """(map radius in game units, minimap PNG). The PNG is transparent except for walkable
+        streets, and covers x and y from -radius to +radius (team 0's base at the bottom)."""
+        info = self._get_json("/v1/assets/map", max_age=30 * DAY)
+        cp = self._cache_path("map:" + info["images"]["minimap"], ".png")
+        if not cp.exists():
+            r = self.session.get(info["images"]["minimap"], timeout=60)
+            r.raise_for_status()
+            cp.write_bytes(r.content)
+        return float(info["radius"]), cp.read_bytes()
+
     # ----------------------------------------------------------- demo queries
     def has_replay(self, match_id: int) -> bool | None:
         """Whether a replay file is stored for the match, from its salts (does not use the

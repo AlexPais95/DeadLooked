@@ -221,12 +221,16 @@ class Match:
         important = self.api.demo_query(mid, SQL_IMPORTANT, "important")
         positions = self.api.demo_query(mid, SQL_POSITIONS, "positions")
 
-        # tick -> game time: least squares fit of kill ticks against metadata death times
+        # tick -> game time: least squares fit of kill ticks against metadata death times.
+        # The game clock stops during pauses while ticks keep running, so the fit is done on
+        # "clock time + pauses so far" and pauses are taken out again in tick_to_t.
+        self._pauses = sorted((float(pz["game_time_s"]), float(pz["pause_duration_s"]))
+                              for pz in (self.meta.get("match_pauses") or []) if pz.get("pause_duration_s"))
         death_times = sorted(d.t for p in self.players.values() for d in p.deaths)
         kt = [k["tick"] for k in kills]
         n = min(len(kt), len(death_times))
         if n >= 2:
-            xs, ys = kt[:n], death_times[:n]
+            xs, ys = kt[:n], [self._with_pauses(t) for t in death_times[:n]]
             mx, my = sum(xs) / n, sum(ys) / n
             b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
             a = my - b * mx
@@ -290,8 +294,18 @@ class Match:
                 Cast(self.tick_to_t(e["tick"]), e["ability_name"], info.get("name", e["ability_name"]))
             )
 
+    def _with_pauses(self, t: float) -> float:
+        return t + sum(d for g, d in self._pauses if g < t)
+
     def tick_to_t(self, tick: float) -> float:
-        return self._tick_a + self._tick_b * tick
+        t = self._tick_a + self._tick_b * tick
+        for g, d in getattr(self, "_pauses", []):
+            if t <= g:
+                break
+            if t < g + d:
+                return g          # during the pause the clock stands still
+            t -= d
+        return t
 
     # ------------------------------------------------------------- helpers
     def near(self, who: Player, t: float, radius_m: float):
