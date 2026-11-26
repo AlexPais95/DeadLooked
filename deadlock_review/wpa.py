@@ -203,13 +203,17 @@ def apply(m: Match, fights, findings, focus_slots) -> MatchWP | None:
                 take([key], f)
                 val, how = c.for_team(key, team), "your death: " + c.context(key, team)
         elif kind == "multi_kill":
-            keys = [c.death(q.slot, d.t) for q in m.players.values() if q.team != team
-                    for d in q.deaths if d.killer_slot == p.slot and t - 1 <= d.t <= t + 15]
-            keys = [k for k in keys if k]
+            victims = [(q, d) for q in m.players.values() if q.team != team
+                       for d in q.deaths if d.killer_slot == p.slot and t - 1 <= d.t <= t + 15]
+            keys = [k for k in (c.death(q.slot, d.t) for q, d in victims) if k]
+            share = {c.death(q.slot, d.t): m.damage_share(p.slot, q.slot, d.t)[0] for q, d in victims}
             if keys:
                 free, shared = take(keys, f)
-                val = sum(c.for_team(k, team) for k in free)
-                how = (f"the kills' share of the swing: " + c.context(keys[0], team)
+                # a kill is worth your share of the damage it took, not the last hit
+                val = sum(c.for_team(k, team) * share.get(k, 1.0) for k in free)
+                how = ("credited by your share of the damage on each victim ("
+                       + ", ".join(f"{q.hero} {m.damage_share(p.slot, q.slot, d.t)[0]:.0%}" for q, d in victims)
+                       + "); " + c.context(keys[0], team)
                        + (f"; {len(keys) - len(free)} of the kills already count for: {'; '.join(shared)}" if shared else ""))
         elif kind in ("good_ult", "ult_no_followup", "ult_weak"):
             involved = {names[h].slot for h, *_ in f.people if h in names} | {p.slot}

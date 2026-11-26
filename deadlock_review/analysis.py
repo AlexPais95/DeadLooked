@@ -676,11 +676,21 @@ def play_findings(m: Match, p: Player) -> list[Finding]:
         if n >= 2:
             names = [h for _, h in mine[i:j + 1]]
             victims = [m.by_hero(h) for h in names]
+            shares, helpers = [], set()
+            if m.replay_ok:
+                for (kt, h), v in zip(mine[i:j + 1], victims):
+                    sh, by = m.damage_share(p.slot, v.slot, kt)
+                    shares.append(f"{h} {sh:.0%}")
+                    helpers |= {a for a, d in by.items() if a != p.slot and d >= 0.15 * sum(by.values())}
+            helper_people = [_person(m.players[a], False) for a in helpers if a in m.players]
+            mean_share = (sum(float(x.rsplit(" ", 1)[1].rstrip("%")) for x in shares) / len(shares) / 100) if shares else 1.0
+            label = MULTI_KILL.get(n, f"{n} kills") + (" (mostly your team's damage)" if mean_share < 0.5 else "")
+            dmg_txt = (f"; your share of the damage on them: {', '.join(shares)}" if shares else "")
             out.append(Finding(p.slot, p.team, mine[i][0], "multi_kill", 1.0 * n,
-                               f"{MULTI_KILL.get(n, f'{n} kills')} at {fmt_t(mine[i][0])}",
-                               f"you killed {', '.join(names)} within {mine[j][0] - mine[i][0]:.0f}s", good=True,
-                               people=tuple([_person(p, False, p)] + [_person(v, True) for v in victims if v]),
-                               short=f"{n} kills within {mine[j][0] - mine[i][0]:.0f}s"))
+                               f"{label} at {fmt_t(mine[i][0])}",
+                               f"you got the last hit on {', '.join(names)} within {mine[j][0] - mine[i][0]:.0f}s{dmg_txt}", good=True,
+                               people=tuple([_person(p, False, p)] + helper_people + [_person(v, True) for v in victims if v]),
+                               short=f"{n} last hits within {mine[j][0] - mine[i][0]:.0f}s{dmg_txt}"))
         i = j + 1
     if m.replay_ok:
         from .rotations import objective_visits

@@ -169,6 +169,7 @@ class Match:
         self.replay_ok = False
         self.replay_error: str | None = None
         self.objective_kills: list[ObjectiveKill] = []
+        self.pair_damage: dict[tuple[int, int], dict[int, int]] = {}   # (attacker slot, victim slot) -> {sec: damage}
         if use_replay:
             try:
                 self._load_replay()
@@ -275,6 +276,8 @@ class Match:
                 t = int(round(self.tick_to_t(r["sec"] * TICKS_PER_SEC + TICKS_PER_SEC // 2)))
                 dmg = self.players[att].damage_out
                 dmg[t] = dmg.get(t, 0) + (r["dmg"] or 0)
+                pair = self.pair_damage.setdefault((att, vic), {})
+                pair[t] = pair.get(t, 0) + (r["dmg"] or 0)
 
         # souls every 10 s (the metadata only has them every few minutes)
         try:
@@ -311,6 +314,19 @@ class Match:
 
     def _with_pauses(self, t: float) -> float:
         return t + sum(d for g, d in self._pauses if g < t)
+
+    def damage_share(self, attacker: int, victim: int, t: float, window: int = 15) -> tuple[float, dict]:
+        """Share of the damage the victim took from enemy heroes in the `window` seconds before t that
+        came from `attacker`, and the damage by each hero. Creeps and self-damage aren't counted."""
+        by = {}
+        for (a, v), secs in self.pair_damage.items():
+            if v != victim:
+                continue
+            d = sum(x for s, x in secs.items() if t - window <= s <= t + 1)
+            if d:
+                by[a] = d
+        tot = sum(by.values())
+        return (by.get(attacker, 0) / tot if tot else 0.0), by
 
     def tick_to_t(self, tick: float) -> float:
         t = self._tick_a + self._tick_b * tick
