@@ -34,6 +34,91 @@ RESIST_STACK = 25      # % resist from items that counts as "stacked"
 
 
 @dataclass
+class Role:
+    name: str                  # "Spirit", "Gun", "Hybrid"
+    frontline: bool            # 45%+ of souls on vitality
+    spirit_dmg: float          # share of your hero damage that was spirit
+    weapon_dmg: float          # bullet + melee
+    melee_dmg: float
+    spend: dict                # slot -> share of souls spent on items
+
+    def describe(self) -> str:
+        parts = [f"{self.spirit_dmg:.0%} of your damage was spirit, {self.weapon_dmg:.0%} gun and melee"]
+        top = sorted(self.spend.items(), key=lambda x: -x[1])
+        if top:
+            parts.append(f"{top[0][1]:.0%} of your item souls went to {top[0][0]} items")
+        return "; ".join(parts)
+
+    @property
+    def label(self) -> str:
+        return self.name + (" frontliner" if self.frontline else " build")
+
+
+def delivery(item: dict) -> str:
+    """How an item delivers its effect: spirit / gun / melee / active / any."""
+    d = _desc(item)
+    if item.get("is_active_item"):
+        return "active"
+    # what triggers it, checked before what it affects ("reduces Bullet Resist when you deal spirit damage")
+    if re.search(r"(your|deal|deals|dealing)\s+(significant\s+)?spirit damage|enemy takes\s+spirit damage", d, re.I):
+        return "spirit"
+    if re.search(r"your bullets|bullets (apply|build)|headshot|next bullet|deal additional\s+weapon damage", d, re.I):
+        return "gun"
+    if re.search(r"\bmelee\b", d, re.I):
+        return "melee"
+    if item.get("item_slot_type") == "weapon":
+        return "gun"          # weapon passives without text proc on bullets (e.g. Spirit Rend)
+    return "any"
+
+
+FIT = {   # role -> delivery -> fit (0 = doesn't work with this build)
+    "Spirit": {"spirit": 3, "active": 2, "any": 2, "melee": 1, "gun": 0},
+    "Gun": {"gun": 3, "any": 2, "active": 1, "melee": 1, "spirit": 0},
+    "Hybrid": {"spirit": 2, "gun": 2, "active": 2, "any": 2, "melee": 1},
+}
+
+
+def fit(item: dict, role: Role | None) -> int:
+    if role is None:
+        return 2
+    f = FIT[role.name][delivery(item)]
+    if role.frontline and item.get("item_slot_type") == "vitality":
+        f += 1
+    if role.melee_dmg >= 0.3 and delivery(item) == "melee":
+        f += 2
+    return f
+
+
+def rank_for(items: list[dict], role: Role | None) -> list[dict]:
+    """Items that work with your build, best fit first, then cheaper tiers first."""
+    good = [i for i in items if fit(i, role) > 0]
+    return sorted(good, key=lambda i: (-fit(i, role), i.get("item_tier") or 9, i.get("cost") or 0))
+
+
+def player_role(m: Match, p: Player) -> Role | None:
+    spend: dict[str, float] = {}
+    for it in p.items:
+        info = m.items_by_id.get(it.item_id) or {}
+        slot = info.get("item_slot_type")
+        if slot:
+            spend[slot] = spend.get(slot, 0) + (info.get("cost") or 0)
+    tot = sum(spend.values()) or 1
+    spend = {k: v / tot for k, v in spend.items()}
+    sp = wp = ml = None
+    if m.replay_ok:
+        enemies = [q for q in m.players.values() if q.team != p.team]
+        dealt = _damage_by_type(m, [p], enemies, "dmg_dealt_by_type")
+        dtot = sum(dealt.values()) or 1
+        sp = sum(v for (s, ct), v in dealt.items() if ct == SPIRIT) / dtot
+        wp = sum(v for (s, ct), v in dealt.items() if ct in (BULLET, MELEE)) / dtot
+        ml = sum(v for (s, ct), v in dealt.items() if ct == MELEE) / dtot
+    if sp is None:   # no replay: judge by item spend
+        sp, wp, ml = spend.get("spirit", 0), spend.get("weapon", 0), 0.0
+    name = "Spirit" if sp >= 0.6 else ("Gun" if wp >= 0.6 else "Hybrid")
+    return Role(name, spend.get("vitality", 0) >= 0.45, sp, wp, ml, spend)
+
+
+@dataclass
 class Need:
     key: str
     title: str
@@ -161,8 +246,8 @@ def _resist_from_items(m: Match, q: Player, prop: str) -> float:
     return total
 
 
-def counter_needs(m: Match, p: Player, raw_path: str = "baselines/raw.jsonl") -> list[Need]:
-    groups = item_groups(list(m.items_by_id.values()))
+def counter_needs(m: Match, p: Player, raw_path: str = "baselines/raw.jsonl", role: Role | None = None) -> list[Need]:
+    groups = {k: rank_for(v, role) for k, v in item_groups(list(m.items_by_id.values())).items()}
     enemies = [q for q in m.players.values() if q.team != p.team]
     allies = [q for q in m.players.values() if q.team == p.team]
     minutes = max(1.0, m.duration / 60)
@@ -237,7 +322,7 @@ def counter_needs(m: Match, p: Player, raw_path: str = "baselines/raw.jsonl") ->
         share_team = cd / (sum(dmg_of(q) for q in enemies) or 1)
         if share_team >= 0.25:
             kind = "silence" if sp >= 0.5 else "disarm"
-            items = groups[kind] + [i for i in groups["stun"] if i not in groups[kind]][:2]
+            items = rank_for(groups[kind] + [i for i in groups["stun"] if i not in groups[kind]], role)
             why = (f"{carry.hero} was their carry: {carry.net_worth:,} souls and {share_team:.0%} of their damage to your team "
                    f"({sp:.0%} spirit). {'Silence' if kind == 'silence' else 'Disarm'} or stun them when they go in.")
             needs.append(Need(f"shutdown_{kind}", f"Shut down {carry.hero}", why,

@@ -457,9 +457,11 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
     extras["counters"] = {}
     for s in focus_slots:
         findings += play_findings(m, m.players[s])
-        from .counters import counter_findings, counter_needs
+        from .counters import counter_findings, counter_needs, player_role
         try:
-            needs = counter_needs(m, m.players[s])
+            role = player_role(m, m.players[s])
+            extras.setdefault("role", {})[s] = role
+            needs = counter_needs(m, m.players[s], role=role)
         except Exception as e:  # counters are extra; never break the report
             print(f"[warn] counter items skipped: {e}")
             needs = []

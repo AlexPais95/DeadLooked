@@ -239,6 +239,13 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .it b { font-size: .76rem; line-height: 1.2; font-weight: 600; }
 .it small { font-size: .68rem; color: var(--muted); }
 .it.owned { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass); }
+.it { position: relative; }
+.it em { font-style: normal; font-size: .64rem; line-height: 1.2; color: var(--muted); }
+.it .best { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font: 600 .6rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px;
+  background: var(--good); color: var(--bg); }
+.ctr-items { padding-top: 6px; }
+.role { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: .88rem; }
 .it.owned small { color: var(--brass); font-weight: 600; }
 
 /* tables */
@@ -704,11 +711,17 @@ def _item_icon(m: Match, item: dict) -> str:
     return f'<span class="ico" style="background-image:url(data:{mime};base64,{base64.b64encode(data).decode()})"></span>'
 
 
-def _counters(m: Match, p, needs) -> str:
+DELIVERY_TAG = {"spirit": "works off your spirit damage", "gun": "works off your bullets", "melee": "works off melee",
+                "active": "active: cast it", "any": "passive"}
+
+
+def _counters(m: Match, p, needs, role=None) -> str:
+    from .counters import delivery
     out = ['<div class="ctrs">']
     for n in needs:
         owned = {b[0]: b for b in n.bought}
-        items = sorted(n.items, key=lambda i: (i["name"] not in owned,))[:6]
+        items = n.items[:5]   # already ranked for your build
+        items += [i for i in n.items if i["name"] in owned and i not in items]
         if n.bought:
             name, t, sold = n.bought[0]
             status = f'<span class="pill good">You bought {E(name)} at {fmt_t(t)}</span>'
@@ -718,13 +731,14 @@ def _counters(m: Match, p, needs) -> str:
             cls = "missing"
         level = "Clear need" if n.strength >= 0.6 else "Worth considering"
         tiles = []
-        for i in items:
+        for k, i in enumerate(items):
             b = owned.get(i["name"])
+            best = '<span class="best">best fit</span>' if k == 0 and role is not None else ""
             sub = f"bought {fmt_t(b[1])}" if b else f"T{i.get('item_tier')} · {i.get('cost', 0):,}"
             tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}" '
                          f'title="{E(i["name"])}: tier {i.get("item_tier")}, {i.get("cost", 0):,} souls">'
-                         f'{_item_icon(m, i)}<b>{E(i["name"])}</b>'
-                         f'<small class="num">{sub}</small></div>')
+                         f'{best}{_item_icon(m, i)}<b>{E(i["name"])}</b>'
+                         f'<small class="num">{sub}</small><em>{DELIVERY_TAG[delivery(i)]}</em></div>')
         out.append(f'<article class="ctr {cls}"><div class="ctr-head"><div><span class="eyebrow">{level}</span>'
                    f'<h3>{E(n.title)}</h3></div>{status}</div>'
                    f'<div class="ctr-why"><span class="side">{"".join(_face(*h) for h in n.heroes)}</span>'
@@ -807,11 +821,15 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
 
     # counter items
     needs = (extras.get("counters") or {}).get(p.slot) or []
+    role = (extras.get("role") or {}).get(p.slot)
     if needs:
         L.append('<section><div class="sec-head"><span class="eyebrow">Based on what the enemy team did this game</span>'
                  '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the '
                  'numbers behind it, the items that do it (from the game\'s item data) and whether you bought one.</p></div>'
-                 + _counters(m, p, needs) + "</section>")
+                 + (f'<div class="role"><span class="pill mid">Your build: {E(role.label)}</span>'
+                    f'<span class="muted">{E(role.describe())}. Items are ranked for this build; ones that don\'t work with it are left out.</span></div>'
+                    if role else "")
+                 + _counters(m, p, needs, role) + "</section>")
 
     # comparison
     if base:

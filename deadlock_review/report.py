@@ -142,6 +142,10 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             continue
         w(f"## Items to answer them ({m.players[slot].hero})")
         w("")
+        role = (extras.get("role") or {}).get(slot)
+        if role:
+            w(f"Your build: **{role.label}** ({role.describe()}). Options are ranked for this build; items that don't work with it are left out.")
+            w("")
         for n in needs:
             got = (f"you bought {n.bought[0][0]} at {fmt_t(n.bought[0][1])}" if n.bought else "**you didn't buy one**")
             since = f" Clear from about {fmt_t(n.since)}." if n.since else ""
