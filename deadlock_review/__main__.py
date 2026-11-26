@@ -32,9 +32,13 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", default=".cache")
     ap.add_argument("--baselines", default="baselines/summary.json", help="top-tier baseline summary (from collect)")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--wait", type=int, default=0, metavar="MIN",
+                    help="keep retrying for up to MIN minutes if the match must still be fetched from Steam")
     a = ap.parse_args(argv)
 
     api = Api(a.cache, verbose=not a.quiet)
+    if a.wait:
+        api.busy_retries = max(4, a.wait // 5)
     m = Match(api, a.match_id, use_replay=not a.no_replay)
     if m.replay_error:
         print(f"[warn] replay unavailable: {m.replay_error}", file=sys.stderr)

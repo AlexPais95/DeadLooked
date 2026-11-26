@@ -35,6 +35,7 @@ class Api:
         self.verbose = verbose
         self.session = requests.Session()
         self.session.headers["User-Agent"] = "deadlock-review/0.1"
+        self.busy_retries = 4      # retries when the API/Steam says it's busy
         self.query_times: list[float] = []  # replay queries actually submitted (for throttling)
 
     # ------------------------------------------------------------------ utils
@@ -52,7 +53,7 @@ class Api:
         if cp.exists() and (max_age is None or time.time() - cp.stat().st_mtime < max_age):
             return json.loads(cp.read_text())
         self._log(f"GET {path} {params or ''}")
-        for attempt in range(4):
+        for attempt in range(self.busy_retries):
             r = self.session.get(BASE + path, params=params, timeout=180)
             if r.status_code not in (429, 503):
                 break
