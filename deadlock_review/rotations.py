@@ -160,7 +160,7 @@ def rotation_findings(m: Match, p: Player):
     from .analysis import Finding  # local import: analysis imports this module's users
     found = []
     for v in objective_visits(m, p):
-        if not (v.lost and v.alive and not v.busy and (v.closest_m or 1e9) > FAR_M):
+        if not (v.lost and v.alive and not v.busy and v.closest_m is not None and v.closest_m > FAR_M):
             continue
         impact = OBJECTIVE_IMPACT.get(v.kind, 1.0)
         if not impact:

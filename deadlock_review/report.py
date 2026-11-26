@@ -125,6 +125,8 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
         for v in visits:
             if not v.alive:
                 you = "dead"
+            elif v.closest_m is None:
+                you = "no position data"
             elif v.there:
                 you = "**there**"
             elif v.busy:
