@@ -177,7 +177,10 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .obj.bad .obj-you { color: var(--bad); } .obj.bad .obj-you i { background: var(--bad); }
 .obj.warn .obj-you { color: var(--warn); } .obj.warn .obj-you i { background: var(--warn); }
 .obj.mid .obj-you { color: var(--muted); }
-.obj.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.obj.lost { background: color-mix(in srgb, var(--bad) 18%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.obj.taken { background: color-mix(in srgb, var(--good) 18%, var(--surface)); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+.obj .badge { background: var(--surface); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
@@ -533,14 +536,15 @@ def _objective_cards(m: Match, p, visits) -> str:
             st, sc = f"You were {v.closest_m:.0f} m away, not fighting", "bad"
         else:
             st, sc = f"You were {v.closest_m:.0f} m away", "mid"
-        chip = '<span class="pill bad">Lost</span>' if v.lost else '<span class="pill good">Taken</span>'
+        res = "lost" if v.lost else "taken"
         where = "base" if v.lane == "base" else v.lane
-        out.append(f'<article class="obj {sc}">{_badge(m, v.kind, owner)}<div class="obj-body">'
-                   f'<div class="obj-head"><h3>{E(v.kind)}</h3>{chip}</div>'
+        out.append(f'<article class="obj {res} {sc}">{_badge(m, v.kind, owner)}<div class="obj-body">'
+                   f'<div class="obj-head"><h3>{E(v.kind)}<span class="sr"> ({res})</span></h3></div>'
                    f'<div class="obj-meta num">{fmt_t(v.t)} · {E(where)}</div>'
                    f'<p class="obj-story">{_objective_story(v, p)}</p>'
                    f'<div class="obj-you"><i></i>{E(st)}</div></div></article>')
-    out.append("</div>")
+    out.append('</div><div class="legend"><span><i style="background:color-mix(in srgb, var(--good) 45%, var(--surface))"></i>your team took it</span>'
+               '<span><i style="background:color-mix(in srgb, var(--bad) 45%, var(--surface))"></i>your team lost it</span></div>')
     if hidden:
         out.append(f'<p class="muted note">{hidden} objective(s) in other lanes before 10:00 are left out: '
                    'during the laning phase only your own lane counts.</p>')
