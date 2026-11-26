@@ -35,6 +35,7 @@ MIN_PURCHASES = 30
 
 
 # ------------------------------------------------------------------ collection
+STORE = "winprob_matches_v4.jsonl"
 TIER_BY_NAME = {"Tier1": "g", "Tier2": "w", "BarrackBoss": "b", "TitanShieldGenerator": "s", "Titan": "p"}  # longest prefix first
 TIER_BY_ID = {**{i: "g" for i in (1, 2, 3, 4)}, **{i: "w" for i in (5, 6, 7, 8)},
               **{i: "b" for i in (12, 13, 14, 15)}, 10: "s", 11: "s", 9: "p"}   # 9 Titan = Patron's first phase; 0 Core ends the game
@@ -60,6 +61,10 @@ def _compact(m: dict) -> dict:
         "p": [{"t": _team(pl["team"]), "h": pl["hero_id"],
                "i": [[it["game_time_s"], it["item_id"]] for it in pl.get("items") or [] if it.get("game_time_s", 0) > 0],
                "nw": [[s["time_stamp_s"], s["net_worth"]] for s in pl.get("stats") or []],
+               # v4: per snapshot [time, healing done, spirit power, gun power]; last snapshot's kill types
+               "st": [[s["time_stamp_s"], s.get("player_healing") or 0, s.get("tech_power") or 0, s.get("weapon_power") or 0]
+                      for s in pl.get("stats") or []],
+               "k": [((pl.get("stats") or [{}])[-1]).get(k) or 0 for k in ("ability_kills", "bullet_kills", "melee_kills")],
                "d": [[d["game_time_s"], d.get("death_duration_s") or 0] for d in pl.get("death_details") or []]}
               for pl in m["players"]],
     }
@@ -246,7 +251,7 @@ def death_swing(matches: list[dict], model: dict) -> dict:
 
 
 def build(api: Api, n: int, days: int, min_badge: int) -> dict:
-    store = Path(api.cache) / "winprob_matches_v3.jsonl"   # v3: objectives incl. the Patron's first phase, deaths
+    store = Path(api.cache) / STORE   # v4: + healing, spirit/gun power per snapshot, kill types
     matches = collect(api, n, days, min_badge, store)
     model = fit(matches)
     value = item_value(matches, model)

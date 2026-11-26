@@ -99,7 +99,7 @@ def _brier(b, X, y):
     return float(np.mean((p - y) ** 2))
 
 
-def run(cache: str, store_name: str = "winprob_matches_v3.jsonl", min_games: int = 400, step: int = 150) -> dict:
+def run(cache: str, store_name: str = "winprob_matches_v4.jsonl", min_games: int = 400, step: int = 150) -> dict:
     store = Path(cache) / store_name
     matches = []
     for line in store.read_text().splitlines():

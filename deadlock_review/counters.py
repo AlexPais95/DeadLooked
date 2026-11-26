@@ -556,7 +556,8 @@ def _covered_and_top(m: Match, p: Player, needs: list[Need], role, raw_groups, a
         for i in n.items:
             grp = SITUATION_GROUP.get(n.key) or next((g for g in ("silence", "disarm", "stun")
                                                       if i in raw_groups.get(g, [])), None)
-            v = sit_value(grp, i["id"], n.situation in ("first", "own_first"), p.hero_id) if grp else None
+            # the card exists because the enemy called for it, so use games where they did
+            v = sit_value(grp, i["id"], n.situation in ("first", "own_first"), p.hero_id, need=True) if grp else None
             if v:
                 n.value[i["id"]] = (v[0], v[1], v[2], v[3], n.situation)   # v[3] = share from your hero
             else:
