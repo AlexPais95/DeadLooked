@@ -211,7 +211,8 @@ class Need:
     own: str = ""                                # what you already had towards it (stats/items)
     top: dict = field(default_factory=dict)      # item id -> (share of top-tier games, avg buy time, win rate)
     top_n: int = 0                               # top-tier games behind those numbers
-    value: dict = field(default_factory=dict)    # item id -> (wins above expected, ± margin, purchases, for this hero?)
+    value: dict = field(default_factory=dict)    # item id -> (wins above expected, ± margin, purchases, per hero?, situation)
+    situation: str = "first"                     # "first": nobody on your team had one; "dup": already covered
 
 
 def _num(v):
@@ -490,6 +491,9 @@ def item_value_for(item_id: int, hero_id: int, min_hero_n: int = 300):
     return row["above"], margin, row["n"], mine
 
 
+SITUATION_GROUP = {"anti_heal": "anti_heal", "spirit_shred": "spirit_shred", "bullet_shred": "bullet_shred",
+                   "spirit_resist": "spirit_resist", "bullet_resist": "bullet_resist"}
+
 TEAM_WIDE = {"anti_heal": "anti_heal", "spirit_shred": "spirit_shred", "bullet_shred": "bullet_shred"}
 
 
@@ -540,11 +544,25 @@ def _covered_and_top(m: Match, p: Player, needs: list[Need], role, raw_groups, a
                 n.top[i["id"]] = (x["matches"] / games, x.get("avg_buy_time_s") or 0, x["wins"] / x["matches"])
         budget = m.networth_at(p, int(n.since or m.duration * 0.6))
 
-        # how much buying it beat the buyer's chance of winning at the time (winprob.py)
+        # how much buying it beat the buyer's chance of winning at the time, in this situation:
+        # first of its kind on your team, or a teammate (for resist: you) already had one (situational.py)
+        from .situational import value as sit_value
+        # resist protects only you, and the advice is about your first one (buying it earlier);
+        # team answers (anti-heal, shred, crowd control) depend on whether a teammate already had one
+        if n.key in ("spirit_resist", "bullet_resist"):
+            n.situation = "own_first"
+        else:
+            n.situation = "dup" if n.covered else "first"
         for i in n.items:
-            v = item_value_for(i["id"], p.hero_id)
+            grp = SITUATION_GROUP.get(n.key) or next((g for g in ("silence", "disarm", "stun")
+                                                      if i in raw_groups.get(g, [])), None)
+            v = sit_value(grp, i["id"], n.situation in ("first", "own_first")) if grp else None
             if v:
-                n.value[i["id"]] = v
+                n.value[i["id"]] = (v[0], v[1], v[2], False, n.situation)
+            else:
+                v = item_value_for(i["id"], p.hero_id)
+                if v:
+                    n.value[i["id"]] = (*v, "any")
 
         def score(i):
             rate = n.top.get(i["id"], (0, 0, 0))[0]

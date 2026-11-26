@@ -47,7 +47,7 @@ cached in `.cache/`, so re-running a report is free.
 - 3+ deaths before 10:00
 - **Laning phase:** before 10:00 only your own lane counts. Fights and objectives in other lanes aren't held against you (missing them, defending them), unless you joined the fight
 - Item timings and the first-maxed ability compared with top-tier players of the same hero
-- **Items to answer the enemy team** (`counters.py`): anti-heal when an enemy healed more per minute than 80% of players in the collected top-tier games; spirit or bullet resist when 60%+ of the damage you took was that type (replay damage types); spirit or bullet shred when 60%+ of your damage was that type and enemies built 25%+ of the matching resist; silence, disarm or stun for their carry (the richer enemy with the most damage to your team). Items are picked from the item assets by what they do (property values and descriptions), so the lists follow patches. Options are ranked for your role. The role is what your hero is meant to do at top tier, from 30 days of Phantom+ hero averages (souls, hero damage, damage taken, max health, compared across all heroes) and the healing/barrier the hero gives teammates in the collected games: carry, frontliner or support. The report also says how you played it this game. Your damage type (spirit, gun, hybrid) decides which items work at all; each item is classed by how it delivers its effect (your spirit damage, your bullets, melee, an active, or passive). Supports get cheaper items, actives and team-wide items first; frontliners get vitality and close-range items; carries get bigger scaling items; items costing more than a quarter of your souls when the need was clear rank lower. Within that, items are ranked by how often top-tier players of your hero buy them against the same enemies (`item-stats` with `enemy_hero_ids`), shown with the typical buy time. Needs you already answered count less: resist you already had from items, and anti-heal, shred or crowd control a teammate already bought (shown with their portrait, item and time). Each need says whether and when you bought an answer; clear needs you never answered are listed as mistakes
+- **Situational buys** (`counters.py`): anti-heal when an enemy healed more per minute than 80% of players in the collected top-tier games; spirit or bullet resist when 60%+ of the damage you took was that type (replay damage types); spirit or bullet shred when 60%+ of your damage was that type and enemies built 25%+ of the matching resist; silence, disarm or stun for their carry (the richer enemy with the most damage to your team). Items are picked from the item assets by what they do (property values and descriptions), so the lists follow patches. Options are ranked for your role. The role is what your hero is meant to do at top tier, from 30 days of Phantom+ hero averages (souls, hero damage, damage taken, max health, compared across all heroes) and the healing/barrier the hero gives teammates in the collected games: carry, frontliner or support. The report also says how you played it this game. Your damage type (spirit, gun, hybrid) decides which items work at all; each item is classed by how it delivers its effect (your spirit damage, your bullets, melee, an active, or passive). Supports get cheaper items, actives and team-wide items first; frontliners get vitality and close-range items; carries get bigger scaling items; items costing more than a quarter of your souls when the need was clear rank lower. Within that, items are ranked by how often top-tier players of your hero buy them against the same enemies (`item-stats` with `enemy_hero_ids`), shown with the typical buy time. Needs you already answered count less: resist you already had from items, and anti-heal, shred or crowd control a teammate already bought (shown with their portrait, item and time). Each need says whether and when you bought an answer; clear needs you never answered are listed as mistakes
 
 Findings are ranked by **Win Probability Added**: how much each one changed your team's chance of winning (see below).
 
@@ -169,6 +169,31 @@ role joins almost every fight. "Not in the fight", "farming while your team need
 objective fell while you were far away" are weighted by that (hero rate, pulled towards the role
 when the hero has few samples), and farming moments are dropped when most top players in your role
 would also have been farming and no objective fell.
+
+## Situational items: first on the team or already covered?
+
+```bash
+python -m deadlock_review.situational
+```
+
+For every counter-item purchase in the 40,000 collected matches: did a teammate already own an item
+from the same group (anti-heal, shred, silence, disarm, stun; for resist: the buyer), and did the
+buyer's team beat its win chance at the moment of purchase? Wins per 100 above expected:
+
+| Group | First on the team | A teammate already had one |
+|---|---|---|
+| Silence | -0.4 | -1.8 |
+| Disarm | -0.5 | -1.8 |
+| Stun | 0.0 | -1.1 |
+| Anti-heal | +0.5 | +0.7 |
+| Spirit shred | +0.3 | +0.9 |
+| Bullet resist (your own) | +0.9 | -0.1 |
+| Spirit resist (your own) | +1.3 | +0.8 |
+
+A second crowd-control item on the same team is clearly worse; anti-heal and shred still help when
+stacked. The situational-buys cards show each item's number for your situation (first on your team,
+already covered, or your first resist item). Limit: the data knows who bought what, not whether the
+enemy needed countering.
 
 ## How it works
 

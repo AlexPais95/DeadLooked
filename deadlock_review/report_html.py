@@ -825,9 +825,12 @@ def _counters(m: Match, p, needs, role=None) -> str:
             if v:
                 clear = abs(v[0]) > v[1]
                 vcls = ("up" if v[0] > 0 else "down") if clear else "flat"
-                vtxt = f"{100 * v[0]:+.1f} wins/100" if clear else "no clear effect"
-                val = (f'<span class="val {vcls}" title="Teams that bought it won {100 * v[0]:+.1f} games per 100 compared with their '
-                       f'chance of winning when it was bought (±{100 * v[1]:.1f}; {v[2]:,} top-tier purchases'
+                sit = v[4] if len(v) > 4 else "any"
+                when = {"first": "as the first on your team", "dup": "with one already on your team",
+                        "own_first": "as your first resist item", "any": ""}[sit]
+                vtxt = (f"{100 * v[0]:+.1f} wins/100" if clear else "no clear effect") + (f"<br>{when}" if when else "")
+                val = (f'<span class="val {vcls}" title="Teams that bought it {when + " " if when else ""}won {100 * v[0]:+.1f} games per 100 '
+                       f'compared with their chance of winning when it was bought (±{100 * v[1]:.1f}; {v[2]:,} top-tier purchases'
                        f'{", by " + E(p.hero) + " players" if v[3] else ", all heroes"})">{vtxt}</span>')
             else:
                 val = ""
@@ -927,12 +930,13 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     needs = (extras.get("counters") or {}).get(p.slot) or []
     role = (extras.get("role") or {}).get(p.slot)
     if needs:
-        L.append('<section><div class="sec-head"><span class="eyebrow">Based on what the enemy team did this game</span>'
-                 '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the numbers behind it. '
-                 'Cards are less important when you or a teammate already had an answer. Items are ranked for your role and by how often '
+        L.append('<section><div class="sec-head"><span class="eyebrow">Items to answer what the enemy team did this game</span>'
+                 '<h2>Situational buys</h2><p>Each card is something the enemy team did that an item counters, with the numbers behind it. '
+                 'Cards are less important when you or a teammate already had an answer. Items are ranked for your role, by how often '
                  f'top-tier {E(p.hero)} players buy them against these enemies (and when). <b>Wins/100</b> is how many more '
                  'games per 100 teams won after buying the item than their chance of winning at that moment predicted, so an item bought '
-                 'when behind isn\'t punished for it; small differences count as no clear effect.</p></div>'
+                 'when behind isn\'t punished for it. It is measured for your situation: as the first such item on your team, or with '
+                 'one already on it (a second silence, disarm or stun is clearly worse). Small differences count as no clear effect.</p></div>'
                  + (f'<div class="role"><span class="pill mid">Your role: {E(role.label)}</span>'
                     f'<span class="muted">{E(role.describe())}. {E(role.ranking_note())}. Items that don\'t work with your damage are left out.</span></div>'
                     if role else "")

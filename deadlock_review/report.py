@@ -143,7 +143,7 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
     for slot, needs in (extras.get("counters") or {}).items():
         if not needs:
             continue
-        w(f"## Items to answer them ({m.players[slot].hero})")
+        w(f"## Situational buys ({m.players[slot].hero})")
         w("")
         role = (extras.get("role") or {}).get(slot)
         if role:
@@ -163,7 +163,9 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
                 w("  Already on your team: " + ", ".join(f"{h} ({it}, {fmt_t(bt)})" for h, _, it, bt in n.covered) + ".  ")
             options = ", ".join(
                 f"{i['name']} (T{i.get('item_tier')}" + (f"; top {m.players[slot].hero}s buy it in {n.top[i['id']][0]:.0%} of games, ~{fmt_t(n.top[i['id']][1])}" if n.top.get(i['id'], (0,))[0] >= 0.005 else "; rare at top tier")
-                + (f"; {100 * n.value[i['id']][0]:+.1f} wins/100 vs expected" if i['id'] in n.value and abs(n.value[i['id']][0]) > n.value[i['id']][1] else "") + ")"
+                + (f"; {100 * n.value[i['id']][0]:+.1f} wins/100 vs expected"
+                   + {"first": " as the first on your team", "dup": " with one already on your team", "own_first": " as your first resist item"}.get(n.value[i['id']][-1], "")
+                   if i['id'] in n.value and abs(n.value[i['id']][0]) > n.value[i['id']][1] else "") + ")"
                 for i in n.items[:5])
             w(f"  Options: {options}")
         w("")
