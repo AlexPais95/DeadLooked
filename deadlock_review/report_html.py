@@ -254,6 +254,8 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .have small { color: var(--muted); }
 .it .top { font: 600 .62rem/1.2 var(--mono); color: var(--brass); }
 .it .top.none { color: var(--muted); font-weight: 500; }
+.it .val { font: 600 .62rem/1.2 var(--mono); }
+.it .val.up { color: var(--good); } .it .val.down { color: var(--bad); } .it .val.flat { color: var(--muted); font-weight: 500; }
 .role { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: .88rem; }
 .it.owned small { color: var(--brass); font-weight: 600; }
 
@@ -749,12 +751,22 @@ def _counters(m: Match, p, needs, role=None) -> str:
             sub = f"bought {fmt_t(b[1])}" if b else f"T{i.get('item_tier')} · {i.get('cost', 0):,}"
             tp = n.top.get(i["id"])
             top = (f'<span class="top" title="Bought in {tp[0]:.0%} of ~{n.top_n:,} top-tier {E(p.hero)} games against these enemies, '
-                   f'on average at {fmt_t(tp[1])}; {tp[2]:.0%} of those games were won">{tp[0]:.0%} of top {E(p.hero)}s<br>~{fmt_t(tp[1])}</span>'
+                   f'on average at {fmt_t(tp[1])}">{tp[0]:.0%} of top {E(p.hero)}s<br>~{fmt_t(tp[1])}</span>'
                    if tp and tp[0] >= 0.005 else f'<span class="top none">rare at top tier</span>')
+            v = n.value.get(i["id"])
+            if v:
+                clear = abs(v[0]) > v[1]
+                vcls = ("up" if v[0] > 0 else "down") if clear else "flat"
+                vtxt = f"{100 * v[0]:+.1f} wins/100" if clear else "no clear effect"
+                val = (f'<span class="val {vcls}" title="Teams that bought it won {100 * v[0]:+.1f} games per 100 compared with their '
+                       f'chance of winning when it was bought (±{100 * v[1]:.1f}; {v[2]:,} top-tier purchases'
+                       f'{", by " + E(p.hero) + " players" if v[3] else ", all heroes"})">{vtxt}</span>')
+            else:
+                val = ""
             tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}" '
                          f'title="{E(i["name"])}: tier {i.get("item_tier")}, {i.get("cost", 0):,} souls">'
                          f'{best}{_item_icon(m, i)}<b>{E(i["name"])}</b>'
-                         f'<small class="num">{sub}</small>{top}<em>{DELIVERY_TAG[delivery(i)]}</em></div>')
+                         f'<small class="num">{sub}</small>{top}{val}<em>{DELIVERY_TAG[delivery(i)]}</em></div>')
         out.append(f'<article class="ctr {cls}"><div class="ctr-head"><div><span class="eyebrow">{level}</span>'
                    f'<h3>{E(n.title)}</h3></div>{status}</div>'
                    f'<div class="ctr-why"><span class="side">{"".join(_face(*h) for h in n.heroes)}</span>'
@@ -846,7 +858,9 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
         L.append('<section><div class="sec-head"><span class="eyebrow">Based on what the enemy team did this game</span>'
                  '<h2>Items to answer them</h2><p>Each card is something the enemy team did that an item counters, with the numbers behind it. '
                  'Cards are less important when you or a teammate already had an answer. Items are ranked for your role and by how often '
-                 f'top-tier {E(p.hero)} players buy them against these enemies (and when).</p></div>'
+                 f'top-tier {E(p.hero)} players buy them against these enemies (and when). <b>Wins/100</b> is how many more '
+                 'games per 100 teams won after buying the item than their chance of winning at that moment predicted, so an item bought '
+                 'when behind isn\'t punished for it; small differences count as no clear effect.</p></div>'
                  + (f'<div class="role"><span class="pill mid">Your role: {E(role.label)}</span>'
                     f'<span class="muted">{E(role.describe())}. {E(role.ranking_note())}. Items that don\'t work with your damage are left out.</span></div>'
                     if role else "")

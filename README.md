@@ -77,6 +77,31 @@ and time out of lane are *style* measures: shown next to top-tier players but ne
 After adding measures, `python -m deadlock_review.collect --recompute` re-runs them on every
 collected match (cached queries are free).
 
+## Item value above expectation (first step towards v3)
+
+```bash
+python -m deadlock_review.winprob --matches 5000
+```
+
+Raw item win rates mislead: teams that are already winning rarely buy counter items, and teams that
+are behind buy them and still lose more often, so counters look bad and late "luxury" items look
+great. Following xPetu's approach (judge a decision against the chance of winning at the moment it
+was made, i.e. Win Probability Added), this:
+
+1. collects recent Phantom+ matches through the bulk metadata endpoint (winner, item purchase times,
+   each player's souls every few minutes; no replay queries),
+2. fits a win-probability model: P(win) from the team's soul lead, one logistic regression per
+   5-minute window (checked on held-out matches: predicted 20-30% at 20:00 → 28% actual, 90-100% at
+   30:00 → 98%),
+3. scores every purchase as result minus win chance at the moment of purchase, averaged per item
+   (and per item and hero): **wins per 100 above expected**.
+
+Example (5,000 matches): Inhibitor wins 54.7% raw but was bought at 57.3% expected (−2.5);
+Spirit Burn 55.6% raw vs 55.4% expected (+0.2); Bullet Resilience 51.7% raw vs 48.4% (+3.3).
+The counter-item cards show this number, treat differences inside the 95% margin as "no clear
+effect", and use clear effects in the ranking. It is still not proof of cause (who buys an item
+also differs), but it removes the biggest bias: being ahead or behind when it was bought.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).
@@ -100,4 +125,4 @@ collected match (cached queries are free).
 ## Roadmap
 
 - **v2 – top-tier baselines:** per hero, collect Phantom+ matches and measure normal ranges (distance to teammates, enemies caught per ultimate, farm per minute, item and ability timings). Flag deviations instead of fixed thresholds.
-- **v3 – win probability:** train a win-probability model on match states (time, soul difference, objectives, players alive, ultimates ready) from many matches, then score every event by how much it changed the team's chance of winning (Win Probability Added). This is the approach behind xPetu's Coachless for League of Legends. It replaces the hand-made impact score and gives an objective ranking of mistakes for each player and for the team.
+- **v3 – win probability (started: `winprob.py` scores items):** train a win-probability model on match states (time, soul difference, objectives, players alive, ultimates ready) from many matches, then score every event by how much it changed the team's chance of winning (Win Probability Added). This is the approach behind xPetu's Coachless for League of Legends. It replaces the hand-made impact score and gives an objective ranking of mistakes for each player and for the team.

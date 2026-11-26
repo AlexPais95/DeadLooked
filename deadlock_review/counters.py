@@ -211,6 +211,7 @@ class Need:
     own: str = ""                                # what you already had towards it (stats/items)
     top: dict = field(default_factory=dict)      # item id -> (share of top-tier games, avg buy time, win rate)
     top_n: int = 0                               # top-tier games behind those numbers
+    value: dict = field(default_factory=dict)    # item id -> (wins above expected, ± margin, purchases, for this hero?)
 
 
 def _num(v):
@@ -464,6 +465,27 @@ def counter_needs(m: Match, p: Player, raw_path: str = "baselines/raw.jsonl", ro
     return needs
 
 
+_VALUE = None
+
+
+def item_value_for(item_id: int, hero_id: int, min_hero_n: int = 300):
+    """(wins above expected, ± 95% margin, purchases, per-hero?) from baselines/item_value.json:
+    the buyer's team's actual result minus its win chance at the moment of purchase, averaged.
+    Uses this hero's purchases when there are enough, otherwise all heroes'."""
+    global _VALUE
+    if _VALUE is None:
+        from .winprob import load
+        _VALUE = load() or {}
+    row = (_VALUE.get("by_hero", {}).get(str(hero_id), {}) or {}).get(str(item_id))
+    mine = bool(row and row["n"] >= min_hero_n)
+    if not mine:
+        row = _VALUE.get("items", {}).get(str(item_id))
+    if not row:
+        return None
+    margin = 1.96 * (max(0.01, row["actual"] * (1 - row["actual"])) / row["n"]) ** 0.5
+    return row["above"], margin, row["n"], mine
+
+
 TEAM_WIDE = {"anti_heal": "anti_heal", "spirit_shred": "spirit_shred", "bullet_shred": "bullet_shred"}
 
 
@@ -514,9 +536,19 @@ def _covered_and_top(m: Match, p: Player, needs: list[Need], role, raw_groups, a
                 n.top[i["id"]] = (x["matches"] / games, x.get("avg_buy_time_s") or 0, x["wins"] / x["matches"])
         budget = m.networth_at(p, int(n.since or m.duration * 0.6))
 
+        # how much buying it beat the buyer's chance of winning at the time (winprob.py)
+        for i in n.items:
+            v = item_value_for(i["id"], p.hero_id)
+            if v:
+                n.value[i["id"]] = v
+
         def score(i):
             rate = n.top.get(i["id"], (0, 0, 0))[0]
-            return fit(i, role, budget) + (2 if rate >= 0.10 else 1 if rate >= 0.03 else 0)
+            sc = fit(i, role, budget) + (2 if rate >= 0.10 else 1 if rate >= 0.03 else 0)
+            v = n.value.get(i["id"])
+            if v and abs(v[0]) > v[1]:          # only when clearly more than noise
+                sc += 1 if v[0] > 0 else -1
+            return sc
         n.items.sort(key=lambda i: (-score(i), -n.top.get(i["id"], (0,))[0], i.get("item_tier") or 9))
 
 
