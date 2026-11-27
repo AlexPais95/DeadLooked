@@ -268,6 +268,24 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
 .role { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: .88rem; }
 .it.owned small { color: var(--brass); font-weight: 600; }
 
+/* item tooltips */
+[data-tip] { cursor: help; }
+[data-tip]:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.mini-ico { width: 22px; height: 22px; border-radius: 5px; background: var(--raise) center / 80% no-repeat; border: 1px solid var(--line); flex: none; }
+.item-tip { position: fixed; z-index: 50; width: min(320px, calc(100vw - 24px)); background: var(--surface); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); overflow: hidden; font-size: .82rem; pointer-events: none; }
+.tip-head { display: grid; gap: 2px; padding: 9px 12px; background: var(--raise); border-bottom: 2px solid var(--muted); }
+.tip-head.weapon { border-bottom-color: var(--amber); } .tip-head.vitality { border-bottom-color: var(--good); } .tip-head.spirit { border-bottom-color: #a77be0; }
+.tip-head b { font: 700 1.05rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.tip-head span { font: 500 .68rem/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+.tip-sec { padding: 8px 12px; display: grid; gap: 5px; border-top: 1px solid var(--line); }
+.tip-sec:first-of-type { border-top: 0; }
+.tip-kind { font: 600 .62rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--brass); }
+.tip-sec p { margin: 0; line-height: 1.4; } .tip-sec p b { color: var(--fg); font-weight: 700; }
+.tip-sec ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.tip-sec li { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); }
+.tip-sec li b { color: var(--fg); font-family: var(--mono); font-weight: 600; }
+
 /* tables */
 .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: .88rem; }
@@ -781,16 +799,115 @@ def _ranked(items, tone: str, my_team: int = 0) -> str:
     return "".join(out)
 
 
-def _item_icon(m: Match, item: dict) -> str:
-    import base64
+_TIPS: dict = {}          # item id -> tooltip html, filled while rendering, emitted once per page
+_ICON_CSS: dict = {}      # item id -> css rule with the icon (each image embedded once)
+
+
+def _clean(html_text: str) -> str:
+    """Item text from the assets API: drop inline SVG icons, keep the highlighted words."""
+    import re
+    t = re.sub(r"<svg.*?</svg>", "", html_text or "", flags=re.S)
+    t = re.sub(r'<span class="highlight">(.*?)</span>', r"<b>\1</b>", t, flags=re.S)
+    t = re.sub(r"<(?!/?b>)[^>]+>", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _prop_line(item: dict, name: str) -> str | None:
+    pr = (item.get("properties") or {}).get(name)
+    if not isinstance(pr, dict):
+        return None
+    val, label = pr.get("value"), pr.get("label")
     try:
-        got = m.api.item_image(item)
-    except Exception:
-        got = None
-    if not got:
-        return '<span class="ico"></span>'
-    data, mime = got
-    return f'<span class="ico" style="background-image:url(data:{mime};base64,{base64.b64encode(data).decode()})"></span>'
+        num = float(val)
+    except (TypeError, ValueError):
+        return None
+    if not label or num == 0:
+        return None
+    shown = f"{num:+g}" if pr.get("prefix") == "{s:sign}" or name.startswith("Bonus") else f"{num:g}"
+    post = pr.get("postfix") or ""
+    post = "" if post.startswith("{") else post
+    return f"<li><span>{E(label)}</span><b>{shown}{E(post)}</b></li>"
+
+
+def _item_tip(item: dict) -> str:
+    """Tooltip in the game's own order: name, slot/tier/cost, innate stats, then each passive/active
+    effect with its text and stats."""
+    slot = (item.get("item_slot_type") or "").capitalize()
+    head = (f'<div class="tip-head {E(item.get("item_slot_type") or "")}"><b>{E(item["name"])}</b>'
+            f'<span>{E(slot)} · Tier {item.get("item_tier")} · {item.get("cost", 0):,} souls</span></div>')
+    body = []
+    for sec in item.get("tooltip_sections") or []:
+        kind = sec.get("section_type")
+        for attr in sec.get("section_attributes") or []:
+            text = _clean(attr.get("loc_string") or "")
+            names = list(attr.get("properties") or []) + list(attr.get("elevated_properties") or []) + \
+                list(attr.get("important_properties") or [])
+            stats = [x for x in (_prop_line(item, n) for n in names) if x]
+            if not text and not stats:
+                continue
+            label = {"innate": "", "passive": "Passive", "active": "Active"}.get(kind, (kind or "").capitalize())
+            cd = _prop_line(item, "AbilityCooldown") if kind == "active" else None
+            body.append('<div class="tip-sec">' + (f'<span class="tip-kind">{label}</span>' if label else "")
+                        + (f"<p>{text}</p>" if text else "") + (f'<ul>{"".join(stats + ([cd] if cd else []))}</ul>' if stats or cd else "")
+                        + "</div>")
+    if not body:
+        d = item.get("description")
+        d = d.get("desc", "") if isinstance(d, dict) else str(d or "")
+        if _clean(d):
+            body.append(f'<div class="tip-sec"><p>{_clean(d)}</p></div>')
+    return head + "".join(body)
+
+
+def _item_icon(m: Match, item: dict, cls: str = "ico") -> str:
+    """Item image that shows the item's description on hover, focus or tap (anywhere in the report)."""
+    import base64
+    iid = item["id"]
+    if iid not in _ICON_CSS:
+        try:
+            got = m.api.item_image(item)
+        except Exception:
+            got = None
+        _ICON_CSS[iid] = (f".ico.i-{iid},.mini-ico.i-{iid}{{background-image:url(data:{got[1]};base64,{base64.b64encode(got[0]).decode()})}}"
+                          if got else "")
+    _TIPS.setdefault(iid, _item_tip(item))
+    return (f'<span class="{cls} i-{iid}" data-tip="{iid}" tabindex="0" role="img" '
+            f'aria-label="{E(item["name"])}: hover or tap for its description"></span>')
+
+
+def _item_by_name(m: Match, name: str) -> dict | None:
+    return next((i for i in m.items_by_id.values() if i.get("name") == name and i.get("shopable")), None)
+
+
+TIP_JS = """
+(function () {
+  var tip = document.createElement('div'); tip.className = 'item-tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  var cur = null;
+  function show(el) {
+    var t = document.getElementById('tip-' + el.dataset.tip); if (!t) return;
+    tip.innerHTML = t.innerHTML; tip.hidden = false; cur = el;
+    var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, pad = 12;
+    var x = Math.min(Math.max(pad, r.left + r.width / 2 - w / 2), window.innerWidth - w - pad);
+    var y = r.top - h - 10; if (y < pad) y = r.bottom + 10;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hide() { tip.hidden = true; cur = null; }
+  var touch = false;   // after a touch, ignore the emulated mouse events phones fire around a tap
+  document.addEventListener('pointerdown', function (e) { touch = e.pointerType !== 'mouse'; }, true);
+  document.addEventListener('mouseover', function (e) { if (touch) return; var el = e.target.closest('[data-tip]'); if (el) show(el); });
+  document.addEventListener('mouseout', function (e) {
+    if (touch) return;
+    if (e.target.closest('[data-tip]') && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]') === cur)) hide();
+  });
+  document.addEventListener('focusin', function (e) { var el = e.target.closest('[data-tip]'); if (el) show(el); });
+  document.addEventListener('focusout', function (e) { if (!touch && e.target.closest('[data-tip]')) hide(); });
+  document.addEventListener('click', function (e) {   // taps (phones): open on the icon, close anywhere else
+    var el = e.target.closest('[data-tip]');
+    if (el) show(el); else hide();
+  });
+  window.addEventListener('scroll', hide, { passive: true });
+})();
+"""
 
 
 DELIVERY_TAG = {"spirit": "works off your spirit damage", "gun": "works off your bullets", "melee": "works off melee",
@@ -863,8 +980,7 @@ def _counters(m: Match, p, needs, role=None) -> str:
                        + f')">{vtxt}</span>')
             else:
                 val = ""
-            tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}" '
-                         f'title="{E(i["name"])}: tier {i.get("item_tier")}, {i.get("cost", 0):,} souls">'
+            tiles.append(f'<div class="it {E(i.get("item_slot_type") or "")}{" owned" if b else ""}">'
                          f'{best}{_item_icon(m, i)}<b>{E(i["name"])}</b>'
                          f'<small class="num">{sub}</small>{top}{val}<em>{DELIVERY_TAG[delivery(i)]}</em></div>')
         out.append(f'<article class="ctr {cls}"><div class="ctr-head"><div><span class="eyebrow">{level}</span>'
@@ -874,7 +990,9 @@ def _counters(m: Match, p, needs, role=None) -> str:
                    + (_decision_html(n, p) if n.decision else "")
                    + (f'<div class="ctr-have"><span class="lab">You already had</span><p>{E(n.own.replace("You already had ", ""))}</p></div>' if n.own else "")
                    + (f'<div class="ctr-have"><span class="lab">Already on your team</span><div class="have-list">'
-                      + "".join(f'<span class="have">{_face(h, t, False, False)}<span>{E(it)} <small class="num">{fmt_t(bt)}</small></span></span>'
+                      + "".join(f'<span class="have">{_face(h, t, False, False)}'
+                                f'{_item_icon(m, _item_by_name(m, it), "mini-ico") if _item_by_name(m, it) else ""}'
+                                f'<span>{E(it)} <small class="num">{fmt_t(bt)}</small></span></span>'
                                 for h, t, it, bt in n.covered) + '</div></div>' if n.covered else "")
                    + f'<div class="ctr-items">{"".join(tiles)}</div></article>')
     out.append("</div>")
@@ -898,6 +1016,8 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
     good = [f for f in findings if f.slot == p.slot and f.good]
     max_imp = max((f.impact for f in bad[:top_n]), default=1)
 
+    _TIPS.clear()
+    _ICON_CSS.clear()
     L = [f"<title>{E(p.hero)} · Match {m.match_id}</title>",
          '<meta name="claude:viewport-fit-sides" content="cover">', FONTS, f"<style>{CSS}{_portrait_css(m)}</style>",
          f'<div class="wrap" style="--c-mine:{_team_var(p.team)};--c-theirs:{_team_var(1 - p.team)}">']
@@ -1005,6 +1125,10 @@ def render_html(m: Match, fights, findings: list[Finding], focus_slots: set[int]
                      f'{q.kills}/{q.deaths_n}/{q.assists} · {q.net_worth:,} souls · {tag}</span></summary><ul>'
                      + ("".join(f"<li>{E(f.title)}</li>" for f in qb) or "<li>No major issues found.</li>") + "</ul></details>")
     L.append("</div></section>")
+    if _TIPS:
+        L.append("<style>" + "".join(_ICON_CSS.values()) + "</style>")
+        L.append("".join(f'<template id="tip-{iid}">{html}</template>' for iid, html in _TIPS.items()))
+        L.append(f"<script>{TIP_JS}</script>")
     L.append('<footer>Made by DeadLooked from the public Deadlock API (match data and replay). Positions are sampled '
              'once per second; impact scores are estimates, not measured win probability.</footer></div>')
     return "\n".join(L)
