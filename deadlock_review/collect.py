@@ -103,6 +103,57 @@ def collect(api: Api, heroes: list[str], per_hero: int, min_badge: int, days: in
     summarize()
 
 
+def fill(api: Api, target: int, min_badge: int, days: int, per_hour: int) -> None:
+    """Collect until every hero has `target` top-tier games: always pick the hero with the fewest,
+    find a recent match with them that has a replay, analyse it (adds all 12 heroes)."""
+    BASE_DIR.mkdir(exist_ok=True)
+    rows = [json.loads(line) for line in RAW.read_text().splitlines() if line] if RAW.exists() else []
+    counts: dict[int, int] = {}
+    for r in rows:
+        counts[r["hero_id"]] = counts.get(r["hero_id"], 0) + 1
+    names = {h["id"]: h["name"] for h in api.heroes() if h.get("player_selectable", True)}
+    for hid in names:
+        counts.setdefault(hid, 0)
+    done = collected_ids()
+    tried: set[int] = set()
+    exhausted: set[int] = set()
+    pools: dict[int, list[int]] = {}
+    throttle = Throttle(api, per_hour)
+    while True:
+        open_heroes = [h for h in names if counts[h] < target and h not in exhausted]
+        if not open_heroes:
+            break
+        hid = min(open_heroes, key=lambda h: counts[h])
+        if hid not in pools:
+            pools[hid] = [mid for mid in find_matches(api, hid, min_badge, days, 120) if mid not in done]
+        pool = [mid for mid in pools[hid] if mid not in tried and mid not in done]
+        if not pool:
+            exhausted.add(hid)
+            print(f"[collect] no more recent matches with replays for {names[hid]} ({counts[hid]} games)", flush=True)
+            continue
+        mid = pool[0]
+        tried.add(mid)
+        if api.has_replay(mid) is False:
+            continue
+        throttle.wait_for(QUERIES_PER_MATCH)
+        try:
+            m = Match(api, mid)
+        except Exception as e:
+            print(f"[collect] {mid}: metadata failed ({e})", flush=True)
+            continue
+        if not m.replay_ok:
+            continue
+        new = match_metrics(m)
+        with RAW.open("a") as fh:
+            for r in new:
+                fh.write(json.dumps(r) + "\n")
+                counts[r["hero_id"]] = counts.get(r["hero_id"], 0) + 1
+        done.add(mid)
+        low = sorted((counts[h], names[h]) for h in names)[:3]
+        print(f"[collect] +{names[hid]} (match {mid}); fewest now: " + ", ".join(f"{n} {c}" for c, n in low), flush=True)
+    summarize()
+
+
 def recompute(api: Api, per_hour: int) -> None:
     """Re-run the metrics on every collected match (after adding new measures).
     Cached replay queries are free; only new queries count against the budget."""
@@ -169,10 +220,16 @@ def main(argv=None) -> int:
     ap.add_argument("--per-hour", type=int, default=150, help="replay queries per hour (API limit is 200)")
     ap.add_argument("--summarize", action="store_true", help="only rebuild summary.json")
     ap.add_argument("--recompute", action="store_true", help="re-run metrics on all collected matches")
+    ap.add_argument("--fill", type=int, metavar="N", help="collect until every hero has N top-tier games")
     ap.add_argument("--cache", default=".cache")
     a = ap.parse_args(argv)
     if a.summarize:
         summarize()
+        return 0
+    if a.fill:
+        api = Api(a.cache, verbose=False)
+        api.cached_only |= {"networth"}
+        fill(api, a.fill, a.min_badge, a.days, a.per_hour)
         return 0
     if a.recompute:
         recompute(Api(a.cache, verbose=False), a.per_hour)

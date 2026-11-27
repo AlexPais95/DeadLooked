@@ -316,7 +316,7 @@ def analyze(m: Match, focus_slots: set[int], benchmarks: dict | None = None):
 
     # ---------- per player
     for p in m.players.values():
-        c = cfg(p.hero)
+        c = cfg(p.hero, m.api)
         tips = c.get("tips", {})
         ult, casts, ready = ult_windows(m, p) if m.replay_ok else (None, [], [])
         ult_logged = bool(casts)
@@ -506,7 +506,7 @@ def _benchmark_findings(m: Match, p: Player, b: dict) -> list[Finding]:
         ref = avg_buy[name]
         late = t - ref
         if late > max(240, 0.3 * ref):
-            key = name in cfg(p.hero)["key_items"]
+            key = name in cfg(p.hero, m.api)["key_items"]
             out.append(Finding(p.slot, p.team, t, "late_item", 1.0 + (0.5 if key else 0),
                                f"{name} bought at {fmt_t(t)} - top players get it around {fmt_t(ref)}",
                                "Key item for this hero." if key else ""))

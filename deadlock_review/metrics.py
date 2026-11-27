@@ -98,7 +98,7 @@ def player_metrics(m: Match, p: Player, fights=None, damage_rows=None) -> dict:
     unlock = next((t for t, cn in p.ability_ups if cn == ult), None) if ult else None
     if casts and unlock is not None:
         out["ult_per10"] = len(casts) / max(1.0, (m.duration - unlock) / 60) * 10
-        radius = cfg(p.hero)["ult_radius_m"]
+        radius = cfg(p.hero, m.api)["ult_radius_m"]
         caught, close = [], []
         for t in casts:
             allies, enemies = m.near(p, t + 1, max(radius, 15))
