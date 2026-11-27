@@ -20,7 +20,8 @@ E = html.escape
 GROUPS = [
     ("Rotations", ["needed_present", "needed_farming", "fight_arrival_s", "objectives_defended",
                    "objectives_taken_present", "lane_changes_per10"]),
-    ("Fighting", ["fight_presence", "fight_damage_ratio", "deaths_per10", "isolated_death_share",
+    ("Fighting", ["fight_presence_early", "fight_presence_late", "fight_damage_early", "fight_damage_late",
+                  "deaths_per10", "isolated_death_share",
                   "ally_distance_m"]),
     ("Ultimate", ["ult_per10", "ult_enemies_caught", "ult_allies_close", "ult_idle_s"]),
     ("Laning & farm", ["lane_deaths", "souls_per_min_10", "souls_per_min_20", "lane_ganks", "lane_time_away"]),

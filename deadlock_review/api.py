@@ -36,6 +36,7 @@ class Api:
         self.session = requests.Session()
         self.session.headers["User-Agent"] = "deadlock-review/0.1"
         self.busy_retries = 4      # retries when the API/Steam says it's busy
+        self.cached_only: set[str] = set()   # replay query names to read from cache only
         self.query_times: list[float] = []  # replay queries actually submitted (for throttling)
 
     # ------------------------------------------------------------------ utils
@@ -181,6 +182,8 @@ class Api:
         cp = self._cache_path(f"demo:{match_id}:{name}:{sql}", ".ndjson")
         if cp.exists():
             return [json.loads(line) for line in cp.read_text().splitlines() if line]
+        if name in self.cached_only:
+            raise ApiError(f"replay query '{name}' not cached and not fetched here")
 
         self._log(f"replay query '{name}' for match {match_id}")
         body = {"match_id": match_id, "query": sql, "format": "ndjson"}

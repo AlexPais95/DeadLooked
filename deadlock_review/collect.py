@@ -108,6 +108,7 @@ def recompute(api: Api, per_hour: int) -> None:
     Cached replay queries are free; only new queries count against the budget."""
     rows = [json.loads(line) for line in RAW.read_text().splitlines() if line]
     ids = list(dict.fromkeys(r["match_id"] for r in rows))
+    api.cached_only |= {"networth"}      # the 10 s souls aren't needed for the baseline measures
     throttle = Throttle(api, per_hour)
     out: dict[int, list[dict]] = {}
     for i, mid in enumerate(ids, 1):

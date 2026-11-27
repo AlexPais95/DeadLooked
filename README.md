@@ -69,7 +69,8 @@ table and flag measures where you did worse than 80% of top-tier games (once at 
 15 games are collected for that hero).
 
 Measures: deaths per 10 min, share of deaths with no ally within 30 m, team fights
-attended, fight damage vs expected, ultimates per 10 min, enemies caught and allies close
+attended and fight damage vs expected (each split before and from 20:00, when top carries start joining
+nearly every fight), ultimates per 10 min, enemies caught and allies close
 per ultimate, seconds the ultimate sat ready, distance to the nearest ally, souls per
 minute at 10 and 20 min, deaths before 10:00, and the rotation measures above. Lane changes
 and time out of lane are *style* measures: shown next to top-tier players but never flagged.

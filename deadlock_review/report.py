@@ -6,7 +6,7 @@ from .analysis import Finding, Fight, rank_key
 from .match import Match, fmt_t
 
 TEAM_NAMES = {0: "Hidden King (team 0)", 1: "Archmother (team 1)"}
-PERCENT_KEYS = {"isolated_death_share", "fight_presence", "needed_present", "needed_farming",
+PERCENT_KEYS = {"isolated_death_share", "fight_presence", "fight_presence_early", "fight_presence_late", "needed_present", "needed_farming",
                 "objectives_defended", "objectives_taken_present", "lane_time_away"}
 
 

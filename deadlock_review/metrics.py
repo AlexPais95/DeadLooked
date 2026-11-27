@@ -15,12 +15,18 @@ from .heroes import cfg
 from .match import Match, Player, dist_m
 from .rotations import in_scope, needed_metrics, rotation_metrics
 
+SPLIT_S = 1200   # 20:00: from here top-tier carries join ~95%+ of team fights
+
 # name -> (label, higher_is_better)
 METRICS = {
     "deaths_per10": ("Deaths per 10 min", False),
     "isolated_death_share": ("Deaths with no ally within 30 m", False),
     "fight_presence": ("Team fights attended (when alive)", True),
+    "fight_presence_early": ("Team fights attended before 20:00", True),
+    "fight_presence_late": ("Team fights attended from 20:00", True),
     "fight_damage_ratio": ("Damage in fights vs expected (median)", True),
+    "fight_damage_early": ("Damage in fights vs expected, before 20:00", True),
+    "fight_damage_late": ("Damage in fights vs expected, from 20:00", True),
     "ult_per10": ("Ultimates per 10 min (after unlock)", True),
     "ult_enemies_caught": ("Enemies caught per ultimate", True),
     "ult_allies_close": ("Allies within 15 m per ultimate", True),
@@ -76,8 +82,16 @@ def player_metrics(m: Match, p: Player, fights=None, damage_rows=None) -> dict:
                     and (in_scope(p, f.deaths[0][0], f.center[0]) or _present_seconds(m, p, f) > 0)]
     if alive_fights:
         out["fight_presence"] = sum(1 for f in alive_fights if _present_seconds(m, p, f) > 0) / len(alive_fights)
+    # carries farm side lanes early and join nearly every fight from ~20:00 (expectations.py), so split there
+    for key, part in (("fight_presence_early", [f for f in alive_fights if f.deaths[0][0] < SPLIT_S]),
+                      ("fight_presence_late", [f for f in alive_fights if f.deaths[0][0] >= SPLIT_S])):
+        if part:
+            out[key] = sum(1 for f in part if _present_seconds(m, p, f) > 0) / len(part)
     if damage_rows is not None:
-        out["fight_damage_ratio"] = _median([r.ratio for r in damage_rows if r.player.slot == p.slot])
+        mine = [r for r in damage_rows if r.player.slot == p.slot]
+        out["fight_damage_ratio"] = _median([r.ratio for r in mine])
+        out["fight_damage_early"] = _median([r.ratio for r in mine if r.fight.deaths[0][0] < SPLIT_S])
+        out["fight_damage_late"] = _median([r.ratio for r in mine if r.fight.deaths[0][0] >= SPLIT_S])
 
     # ultimate
     ult, casts, ready = ult_windows(m, p)
