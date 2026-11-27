@@ -149,6 +149,79 @@ def build(cache: str = ".cache", store_name: str = "winprob_matches_v4.jsonl") -
     return out
 
 
+CHECK_TIMES = range(600, 2701, 300)     # 10:00 ... 45:00
+BUY_WINDOW_S = 300
+
+
+def buy_vs_skip(cache: str = ".cache", store_name: str = "winprob_matches_v4.jsonl") -> dict:
+    """The fair test: among teams (for resist: players) in the same situation at a given minute (the enemy
+    calls for the answer and they don't have one yet), did the ones who bought one in the next 5 minutes
+    beat their win chance by more than the ones who didn't? Both are measured from the same moment, so a
+    strong enemy draft or a game already slipping affects both sides equally."""
+    api = Api(cache, verbose=False)
+    groups = item_groups(api.items())
+    ids = {g: {i["id"] for i in items} for g, items in groups.items()}
+    model = (load() or {}).get("model")
+    resist = {i["id"]: (_num(i, "TechResist"), _num(i, "BulletResist")) for i in api.items()}
+    lines = (Path(cache) / store_name).read_text().splitlines()
+    heal_p80 = _heal_thresholds(lines)
+    acc: dict = {}
+    for line in lines:
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if "st" not in m["p"][0]:
+            continue
+        for T in CHECK_TIMES:
+            if T + 60 > m["dur"]:
+                break
+            for team in (0, 1):
+                exp = None
+                for g in ("anti_heal", "spirit_shred", "bullet_shred", "spirit_resist", "bullet_resist"):
+                    if not _need(g, m, team, T, heal_p80, resist):
+                        continue
+                    units = [pl for pl in m["p"] if pl["t"] == team]
+                    for unit in ([[pl] for pl in units] if g in PERSONAL else [units]):
+                        if any(bt < T and iid in ids[g] for pl in unit for bt, iid in pl["i"]):
+                            continue            # already had one
+                        bought = any(T <= bt < T + BUY_WINDOW_S and iid in ids[g] for pl in unit for bt, iid in pl["i"])
+                        if exp is None:
+                            exp = win_prob_state(model, m, team, T)
+                        won = 1.0 if m["win"] == team else 0.0
+                        for key in (f"{g}|*", f"{g}|{T // 60}"):
+                            a = acc.setdefault(key, {"buy": [0, 0.0], "skip": [0, 0.0]})
+                            r = a["buy" if bought else "skip"]
+                            r[0] += 1
+                            r[1] += won - exp
+    out: dict = {}
+    for key, a in acc.items():
+        g, when = key.split("|")
+        row = {side: {"n": a[side][0], "above": (a[side][1] / a[side][0]) if a[side][0] else None} for side in ("buy", "skip")}
+        if row["buy"]["n"] >= 100 and row["skip"]["n"] >= 100:
+            row["difference"] = row["buy"]["above"] - row["skip"]["above"]
+            row["margin"] = 1.96 * (0.25 / row["buy"]["n"] + 0.25 / row["skip"]["n"]) ** 0.5
+        out.setdefault(g, {})[when] = row
+    data = json.loads(OUT.read_text()) if OUT.exists() else {}
+    data["buy_vs_skip"] = out
+    OUT.write_text(json.dumps(data))
+    return out
+
+
+def buy_vs_skip_value(group: str, minute: float | None = None):
+    """(difference in wins per 100 between buying and not buying, margin, buyers, skippers)."""
+    global _CACHE
+    if _CACHE is None:
+        _CACHE = json.loads(OUT.read_text()) if OUT.exists() else {}
+    g = (_CACHE.get("buy_vs_skip") or {}).get(group) or {}
+    row = g.get(str(int(max(10, min(45, round(minute / 5) * 5))))) if minute is not None else None
+    if not row or "difference" not in row:
+        row = g.get("*")
+    if not row or "difference" not in row:
+        return None
+    return row["difference"], row["margin"], row["buy"]["n"], row["skip"]["n"]
+
+
 _CACHE = None
 
 

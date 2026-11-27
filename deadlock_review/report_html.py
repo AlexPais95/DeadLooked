@@ -252,6 +252,9 @@ ul.wins li b { font-weight: 600; } ul.wins li span { color: var(--muted); font-s
   font: 600 .6rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px;
   background: var(--good); color: var(--bg); }
 .ctr-items { padding-top: 6px; }
+.decide { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center;
+  padding: 8px 12px; border-radius: 6px; background: var(--raise); font-size: .84rem; }
+.decide b { font-size: 1.4rem; } .decide.up b { color: var(--good); } .decide.down b { color: var(--bad); } .decide.flat b { color: var(--muted); }
 .ctr-have { display: grid; gap: 6px; font-size: .84rem; }
 .ctr-have .lab { font: 600 .62rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .have-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
@@ -794,6 +797,28 @@ DELIVERY_TAG = {"spirit": "works off your spirit damage", "gun": "works off your
                 "active": "active: cast it", "any": "passive"}
 
 
+DECISION_WHO = {"anti_heal": "teams facing a heavy healer without anti-heal",
+                "spirit_shred": "teams facing stacked spirit resist without spirit shred",
+                "bullet_shred": "teams facing stacked bullet resist without bullet shred",
+                "spirit_resist": "players without spirit resist against a spirit-heavy team",
+                "bullet_resist": "players without bullet resist against a gun-heavy team"}
+
+
+def _decision_html(n, p) -> str:
+    d, mg, nb, ns, minute = n.decision
+    clear = abs(d) > mg
+    cls = ("up" if d > 0 else "down") if clear else "flat"
+    who = DECISION_WHO.get(n.key, "players in this situation")
+    note = ""
+    if n.covered and n.key not in ("spirit_resist", "bullet_resist"):
+        h, _, it, bt = sorted(n.covered, key=lambda c: c[3])[0]
+        note = (f" Your team already had {E(it)} ({E(h)}, {fmt_t(bt)}), so this mainly shows how much it matters "
+                "that someone on the team has one.")
+    return (f'<div class="decide {cls}"><b class="num">{100 * d:+.1f}</b><span>wins per 100 for buying one around {minute}:00 '
+            f'instead of not buying (±{100 * mg:.1f}). Top-tier {E(who)}: {nb:,} bought one within 5 minutes, '
+            f'{ns:,} didn\'t; both measured against their win chance at that moment.{note}</span></div>')
+
+
 def _counters(m: Match, p, needs, role=None) -> str:
     from .counters import delivery
     out = ['<div class="ctrs">']
@@ -846,6 +871,7 @@ def _counters(m: Match, p, needs, role=None) -> str:
                    f'<h3>{E(n.title)}</h3></div>{status}</div>'
                    f'<div class="ctr-why"><span class="side">{"".join(_face(*h) for h in n.heroes)}</span>'
                    f'<p>{E(n.why.rstrip("."))}' + (f'. Clear from about {fmt_t(n.since)}.' if n.since else ".") + '</p></div>'
+                   + (_decision_html(n, p) if n.decision else "")
                    + (f'<div class="ctr-have"><span class="lab">You already had</span><p>{E(n.own.replace("You already had ", ""))}</p></div>' if n.own else "")
                    + (f'<div class="ctr-have"><span class="lab">Already on your team</span><div class="have-list">'
                       + "".join(f'<span class="have">{_face(h, t, False, False)}<span>{E(it)} <small class="num">{fmt_t(bt)}</small></span></span>'

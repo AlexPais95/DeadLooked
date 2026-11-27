@@ -157,6 +157,9 @@ def render(m: Match, fights: list[Fight], findings: list[Finding], focus_slots: 
             w(f"- **{n.title}** ({level}) - {got}  ")
             w(f"  {n.why.rstrip('.')}.{since}  ")
             options = ", ".join(f"{i['name']} (T{i.get('item_tier')})" for i in n.items[:6])
+            if n.decision:
+                d, mg, nb, ns, minute = n.decision
+                w(f"  Buying one around {minute}:00 vs not: **{100 * d:+.1f} wins/100** (±{100 * mg:.1f}; {nb:,} top-tier buyers vs {ns:,} who didn't, same situation).  ")
             if n.own:
                 w(f"  {n.own}.  ")
             if n.covered:

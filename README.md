@@ -197,6 +197,26 @@ Wraith but +0.2 over all heroes; Enchanter's Emblem as a first resist item is +6
 already covered, or your first resist item). Limit: the data knows who bought what, not whether the
 enemy needed countering.
 
+### Buying vs not buying, in the same situation
+
+Comparing "needed" with "not needed" purchases mixes up different kinds of games (a team facing a
+heavy healer is often facing a stronger draft). The fair test, `situational.buy_vs_skip`: at every
+5-minute mark from 10:00, take the teams (for resist: players) whose enemy calls for an answer and who
+don't have one yet; compare those who bought one in the next 5 minutes with those who didn't, both
+against their win chance at that moment. 40,000 Phantom+ matches, wins per 100:
+
+| Situation | Buy vs skip |
+|---|---|
+| Anti-heal vs an enemy healing more per minute than 80% of players | +5.3 ±1.0 (+5.9 at 10 min, +2.4 at 20, -5.1 at 30) |
+| Spirit shred vs 2+ enemies with 25%+ spirit resist from items | +4.6 ±1.9 |
+| Bullet shred vs 2+ enemies with 25%+ bullet resist | +3.7 ±1.2 |
+| Bullet resist vs a team getting 60%+ of its kills with bullets/melee | +3.3 ±0.6 |
+| Spirit resist vs a team getting 60%+ of its kills with abilities | +2.4 ±0.5 |
+
+The situational-buys cards show this number for the minute the need became clear. It is the closest
+thing here to "should I buy it": still observational (who buys also differs), but both sides start
+from the same moment and state.
+
 ## How it works
 
 1. `api.py` fetches metadata, hero/item assets and benchmark stats, and runs replay SQL jobs (submit, poll, download the zstd NDJSON result).

@@ -213,6 +213,7 @@ class Need:
     top_n: int = 0                               # top-tier games behind those numbers
     value: dict = field(default_factory=dict)    # item id -> (wins above expected, ± margin, purchases, per hero?, situation)
     situation: str = "first"                     # "first": nobody on your team had one; "dup": already covered
+    decision: tuple | None = None                # (buying vs not buying in wins/100, margin, buyers, skippers, minute)
 
 
 def _num(v):
@@ -553,6 +554,12 @@ def _covered_and_top(m: Match, p: Player, needs: list[Need], role, raw_groups, a
             n.situation = "own_first"
         else:
             n.situation = "dup" if n.covered else "first"
+        # the decision itself: teams in this situation that bought one vs teams that didn't (situational.buy_vs_skip)
+        from .situational import buy_vs_skip_value
+        minute = (n.since or 900) / 60
+        dv = buy_vs_skip_value(SITUATION_GROUP.get(n.key, ""), minute) if n.key in SITUATION_GROUP else None
+        if dv:
+            n.decision = (*dv, int(max(10, min(45, round(minute / 5) * 5))))
         for i in n.items:
             grp = SITUATION_GROUP.get(n.key) or next((g for g in ("silence", "disarm", "stun")
                                                       if i in raw_groups.get(g, [])), None)
